@@ -157,7 +157,7 @@ services:
         compress: "true"
     
   rabbitmq:
-    image: rabbitmq:3-management
+    image: jcr.savorcare.com/docker/rabbitmq:3-management
     restart: unless-stopped
     networks:
       - backend
@@ -176,7 +176,7 @@ services:
         compress: "true"
   
   nuq-postgres:
-    build: apps/nuq-postgres
+    image: jcr.savorcare.com/ghcr/firecrawl/nuq-postgres:latest
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
