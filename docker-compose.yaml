@@ -168,6 +168,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    volumes:
+      - /tmp/firecrawl/rabiitmq:/var/lib/rabbitmq
     logging:
       driver: "json-file"
       options:
