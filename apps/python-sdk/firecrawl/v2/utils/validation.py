@@ -454,6 +454,35 @@ def _validate_query_format(format_obj: Any) -> Dict[str, Any]:
     if not isinstance(format_obj.get('prompt'), str) or not format_obj['prompt'].strip():
         raise ValueError("query format requires a non-empty 'prompt' string")
 
+    if "directQuote" in format_obj:
+        raise ValueError("query format uses 'mode' instead of 'directQuote'")
+
+    mode = format_obj.get("mode")
+    if mode is not None and mode not in ("freeform", "directQuote"):
+        raise ValueError("query format mode must be 'freeform' or 'directQuote'")
+
+    return format_obj
+
+
+def _validate_question_format(format_obj: Any) -> Dict[str, Any]:
+    """Validate and prepare question format object."""
+    if not isinstance(format_obj, dict):
+        raise ValueError("question format must be an object with 'type' and 'question' fields")
+
+    if not isinstance(format_obj.get('question'), str) or not format_obj['question'].strip():
+        raise ValueError("question format requires a non-empty 'question' string")
+
+    return format_obj
+
+
+def _validate_highlights_format(format_obj: Any) -> Dict[str, Any]:
+    """Validate and prepare highlights format object."""
+    if not isinstance(format_obj, dict):
+        raise ValueError("highlights format must be an object with 'type' and 'query' fields")
+
+    if not isinstance(format_obj.get('query'), str) or not format_obj['query'].strip():
+        raise ValueError("highlights format requires a non-empty 'query' string")
+
     return format_obj
 
 
@@ -566,12 +595,20 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                     raise ValueError("json format must be an object with 'type', 'prompt', and 'schema' fields")
                                 if fmt == "query":
                                     raise ValueError("query format must be an object with 'type' and 'prompt' fields")
+                                if fmt == "question":
+                                    raise ValueError("question format must be an object with 'type' and 'question' fields")
+                                if fmt == "highlights":
+                                    raise ValueError("highlights format must be an object with 'type' and 'query' fields")
                                 converted_formats.append(_convert_format_string(fmt))
                             elif isinstance(fmt, dict):
                                 fmt_type = _convert_format_string(fmt.get('type')) if fmt.get('type') else None
                                 if fmt_type == 'json':
                                     validated_json = _validate_json_format({**fmt, 'type': 'json'})
                                     converted_formats.append(validated_json)
+                                elif fmt_type == 'question':
+                                    converted_formats.append(_validate_question_format(fmt))
+                                elif fmt_type == 'highlights':
+                                    converted_formats.append(_validate_highlights_format(fmt))
                                 elif fmt_type == 'query':
                                     converted_formats.append(_validate_query_format(fmt))
                                 elif fmt_type == 'screenshot':
@@ -591,6 +628,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                             elif hasattr(fmt, 'type'):
                                 if fmt.type == 'json':
                                     converted_formats.append(_validate_json_format(fmt.model_dump()))
+                                elif fmt.type == 'question':
+                                    converted_formats.append(_validate_question_format(fmt.model_dump(exclude_none=True)))
+                                elif fmt.type == 'highlights':
+                                    converted_formats.append(_validate_highlights_format(fmt.model_dump(exclude_none=True)))
                                 elif fmt.type == 'query':
                                     converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
                                 else:
@@ -623,12 +664,20 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                 raise ValueError("json format must be an object with 'type', 'prompt', and 'schema' fields")
                             if fmt == "query":
                                 raise ValueError("query format must be an object with 'type' and 'prompt' fields")
+                            if fmt == "question":
+                                raise ValueError("question format must be an object with 'type' and 'question' fields")
+                            if fmt == "highlights":
+                                raise ValueError("highlights format must be an object with 'type' and 'query' fields")
                             converted_formats.append(_convert_format_string(fmt))
                         elif isinstance(fmt, dict):
                             fmt_type = _convert_format_string(fmt.get('type')) if fmt.get('type') else None
                             if fmt_type == 'json':
                                 validated_json = _validate_json_format({**fmt, 'type': 'json'})
                                 converted_formats.append(validated_json)
+                            elif fmt_type == 'question':
+                                converted_formats.append(_validate_question_format(fmt))
+                            elif fmt_type == 'highlights':
+                                converted_formats.append(_validate_highlights_format(fmt))
                             elif fmt_type == 'query':
                                 converted_formats.append(_validate_query_format(fmt))
                             elif fmt_type == 'screenshot':
@@ -646,6 +695,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         elif hasattr(fmt, 'type'):
                             if fmt.type == 'json':
                                 converted_formats.append(_validate_json_format(fmt.model_dump()))
+                            elif fmt.type == 'question':
+                                converted_formats.append(_validate_question_format(fmt.model_dump(exclude_none=True)))
+                            elif fmt.type == 'highlights':
+                                converted_formats.append(_validate_highlights_format(fmt.model_dump(exclude_none=True)))
                             elif fmt.type == 'screenshot':
                                 normalized = {'type': 'screenshot'}
                                 if getattr(fmt, 'full_page', None) is not None:

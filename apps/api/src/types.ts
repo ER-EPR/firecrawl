@@ -21,6 +21,12 @@ type ScrapeJobCommon = {
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
   requestId?: string;
+  monitoring?: {
+    monitorId: string;
+    checkId: string;
+    targetId: string;
+    source: "explicit" | "discovered";
+  };
 };
 
 export type ScrapeJobData = ScrapeJobCommon &
@@ -146,6 +152,8 @@ export enum RateLimiterMode {
   Browser = "browser",
   BrowserExecute = "browserExecute",
   Account = "account",
+  SupportAsk = "supportAsk",
+  SupportDocsSearch = "supportDocsSearch",
 }
 
 export type AuthResponse =

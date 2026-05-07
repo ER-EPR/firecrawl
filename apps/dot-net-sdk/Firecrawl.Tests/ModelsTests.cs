@@ -84,13 +84,17 @@ public class ModelsTests
         {
             Limit = 5,
             Location = "US",
-            Tbs = "qdr:w"
+            Tbs = "qdr:w",
+            IncludeDomains = new() { "firecrawl.dev" },
+            ExcludeDomains = new() { "example.com" }
         };
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
         Assert.Contains("\"limit\":5", json);
         Assert.Contains("\"location\":\"US\"", json);
         Assert.Contains("\"tbs\":\"qdr:w\"", json);
+        Assert.Contains("\"includeDomains\":[\"firecrawl.dev\"]", json);
+        Assert.Contains("\"excludeDomains\":[\"example.com\"]", json);
     }
 
     [Fact]
@@ -238,6 +242,42 @@ public class ModelsTests
         Assert.Contains("\"type\":\"json\"", json);
         Assert.Contains("\"prompt\"", json);
         Assert.Contains("\"schema\"", json);
+    }
+
+    [Fact]
+    public void QueryFormat_HasCorrectMode()
+    {
+        var format = new QueryFormat
+        {
+            Prompt = "What is Firecrawl?",
+            Mode = QueryFormat.DirectQuoteMode
+        };
+
+        var json = JsonSerializer.Serialize(format, JsonOptions);
+        Assert.Contains("\"type\":\"query\"", json);
+        Assert.Contains("\"prompt\":\"What is Firecrawl?\"", json);
+        Assert.Contains("\"mode\":\"directQuote\"", json);
+    }
+
+    [Fact]
+    public void QuestionAndHighlightsFormats_SerializeCorrectly()
+    {
+        var question = new QuestionFormat
+        {
+            Question = "What is Firecrawl?"
+        };
+        var highlights = new HighlightsFormat
+        {
+            Query = "What is Firecrawl?"
+        };
+
+        var questionJson = JsonSerializer.Serialize(question, JsonOptions);
+        Assert.Contains("\"type\":\"question\"", questionJson);
+        Assert.Contains("\"question\":\"What is Firecrawl?\"", questionJson);
+
+        var highlightsJson = JsonSerializer.Serialize(highlights, JsonOptions);
+        Assert.Contains("\"type\":\"highlights\"", highlightsJson);
+        Assert.Contains("\"query\":\"What is Firecrawl?\"", highlightsJson);
     }
 
     [Fact]

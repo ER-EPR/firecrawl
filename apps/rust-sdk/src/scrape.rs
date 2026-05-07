@@ -436,7 +436,60 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{HighlightsFormat, QueryFormat, QueryFormatMode, QuestionFormat};
     use serde_json::json;
+
+    #[test]
+    fn test_query_format_serializes_mode() {
+        let options = ScrapeOptions {
+            formats: Some(vec![Format::Query(QueryFormat {
+                prompt: "What is Firecrawl?".to_string(),
+                mode: Some(QueryFormatMode::DirectQuote),
+            })]),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["formats"][0],
+            json!({
+                "type": "query",
+                "prompt": "What is Firecrawl?",
+                "mode": "directQuote"
+            })
+        );
+    }
+
+    #[test]
+    fn test_question_and_highlights_formats_serialize() {
+        let options = ScrapeOptions {
+            formats: Some(vec![
+                Format::Question(QuestionFormat {
+                    question: "What is Firecrawl?".to_string(),
+                }),
+                Format::Highlights(HighlightsFormat {
+                    query: "What is Firecrawl?".to_string(),
+                }),
+            ]),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["formats"][0],
+            json!({
+                "type": "question",
+                "question": "What is Firecrawl?"
+            })
+        );
+        assert_eq!(
+            payload["formats"][1],
+            json!({
+                "type": "highlights",
+                "query": "What is Firecrawl?"
+            })
+        );
+    }
 
     #[tokio::test]
     async fn test_scrape_with_mock() {

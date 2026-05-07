@@ -38,7 +38,7 @@ defmodule Firecrawl do
       )
   """
 
-  @type response :: {:ok, Req.Response.t()} | {:error, Exception.t()}
+  @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
 
@@ -87,7 +87,14 @@ defmodule Firecrawl do
       headers: [{"authorization", "Bearer #{api_key}"}]
     )
     |> Req.merge(opts)
+    |> Req.Request.append_response_steps(firecrawl_error_handler: &handle_api_error/1)
   end
+
+  defp handle_api_error({request, %Req.Response{status: status} = response}) when status >= 400 do
+    {request, Firecrawl.Error.exception(status: status, body: response.body)}
+  end
+
+  defp handle_api_error({request, response}), do: {request, response}
 
   defp to_body(validated_params, key_mapping) do
     Map.new(validated_params, fn {k, v} ->
@@ -121,6 +128,29 @@ defmodule Firecrawl do
   defp camelize(string) do
     [first | rest] = String.split(string, "_")
     Enum.join([first | Enum.map(rest, &String.capitalize/1)])
+  end
+
+  defp fetch_file_field(file, key) do
+    case Keyword.fetch(file, key) do
+      {:ok, _value} = ok -> ok
+      :error -> {:error, %ArgumentError{message: "missing required file field: #{key}"}}
+    end
+  end
+
+  defp validate_filename(filename) do
+    if is_binary(filename) and filename != "" do
+      :ok
+    else
+      {:error, %ArgumentError{message: "filename cannot be empty"}}
+    end
+  end
+
+  defp validate_data(data) do
+    if is_nil(data) do
+      {:error, %ArgumentError{message: "file data cannot be empty"}}
+    else
+      :ok
+    end
   end
 
   @doc """
@@ -272,7 +302,7 @@ defmodule Firecrawl do
     prompt: [type: :string, doc: "A prompt to use to generate the crawler options (all the parameters below) from natural language. Explicitly set parameters will override the generated equivalents."],
     regex_on_full_url: [type: :boolean, doc: "When true, includePaths and excludePaths regex patterns are matched against the full URL (including query parameters) instead of just the URL pathname. Useful when you need to filter URLs based on query strings."],
     scrape_options: [type: :keyword_list],
-    sitemap: [type: {:in, [:skip, :include, :only]}, doc: "Sitemap mode when crawling. If you set it to 'skip', the crawler will ignore the website sitemap and only crawl the entered URL and discover pages from there onwards. If you set it to 'only', the crawler will only crawl URLs from the sitemap (plus the start URL) and will not discover links from HTML."],
+    sitemap: [type: {:or, [{:in, [:skip, :include, :only]}, :string]}, doc: "Sitemap mode when crawling. If you set it to 'skip', the crawler will ignore the website sitemap and only crawl the entered URL and discover pages from there onwards. If you set it to 'only', the crawler will only crawl URLs from the sitemap (plus the start URL) and will not discover links from HTML."],
     url: [type: :string, required: true, doc: "The base URL to start crawling from"],
     webhook: [type: :keyword_list, doc: "A webhook specification object."],
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this crawl. To enable this feature, please contact help@firecrawl.dev"]
@@ -852,7 +882,7 @@ defmodule Firecrawl do
     limit: [type: :integer, doc: "Maximum number of links to return"],
     location: [type: :keyword_list, doc: "Location settings for the request. When specified, this will use an appropriate proxy if available and emulate the corresponding language and timezone settings. Defaults to 'US' if not specified."],
     search: [type: :string, doc: "Specify a search query to order the results by relevance. Example: 'blog' will return URLs that contain the word 'blog' in the URL ordered by relevance."],
-    sitemap: [type: {:in, [:skip, :include, :only]}, doc: "Sitemap mode when mapping. If you set it to `skip`, the sitemap won't be used to find URLs. If you set it to `only`, only URLs that are in the sitemap will be returned. By default (`include`), the sitemap and other methods will be used together to find URLs."],
+    sitemap: [type: {:or, [{:in, [:skip, :include, :only]}, :string]}, doc: "Sitemap mode when mapping. If you set it to `skip`, the sitemap won't be used to find URLs. If you set it to `only`, only URLs that are in the sitemap will be returned. By default (`include`), the sitemap and other methods will be used together to find URLs."],
     timeout: [type: :integer, doc: "Timeout in milliseconds. There is no timeout by default."],
     url: [type: :string, required: true, doc: "The base URL to start crawling from"]
   ])
@@ -894,12 +924,111 @@ defmodule Firecrawl do
   end
 
 
+  @parse_file_schema NimbleOptions.new!([
+    block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking."],
+    exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
+    formats: [type: {:list, :any}, doc: "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported."],
+    headers: [type: :any, doc: "Headers to send when additional network requests are required."],
+    include_tags: [type: {:list, :string}, doc: "Tags to include in the output."],
+    integration: [type: :string, doc: "Optional integration identifier."],
+    only_main_content: [type: :boolean, doc: "Only return the main content of the page excluding headers, navs, footers, etc."],
+    origin: [type: :string, doc: "Origin identifier for analytics and logging."],
+    parsers: [type: {:list, :any}, doc: "Controls file parser behavior when relevant (for example PDF parser mode)."],
+    proxy: [type: {:or, [{:in, [:basic, :auto]}, :string]}, doc: "Proxy mode for parse uploads. `/parse` supports only `basic` and `auto`."],
+    remove_base64_images: [type: :boolean, doc: "Remove base64-encoded images from output and keep alt text placeholders."],
+    skip_tls_verification: [type: :boolean, doc: "Skip TLS certificate verification when making requests."],
+    timeout: [type: :integer, doc: "Timeout in milliseconds for the request. Default is 30000 (30 seconds). Maximum is 300000 (300 seconds)."],
+    zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this parse. To enable this feature, please contact help@firecrawl.dev"]
+  ])
+
+  @parse_file_key_mapping %{block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
+
+  @doc """
+  Upload and parse a file
+
+  `POST /parse`
+
+  Sends a `multipart/form-data` request.
+
+  Tag: Scraping
+
+  ## File
+
+  Pass `file` as a keyword list:
+
+    * `:filename` (required) - The filename to send.
+    * `:data` (required) - The file contents as a binary.
+    * `:content_type` (optional) - The MIME type of the file.
+
+  ## Parameters
+
+  Validated by `NimbleOptions`. Pass options as a keyword list with snake_case keys.
+  These are JSON-encoded and sent as the `options` multipart field.
+  See `@parse_file_schema` for the full schema.
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+  """
+  @spec parse_file(keyword(), keyword(), keyword()) :: response()
+  def parse_file(file, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @parse_file_schema),
+         {:ok, filename} <- fetch_file_field(file, :filename),
+         :ok <- validate_filename(filename),
+         {:ok, data} <- fetch_file_field(file, :data),
+         :ok <- validate_data(data) do
+      content_type = Keyword.get(file, :content_type)
+
+      file_part =
+        case content_type do
+          nil -> {data, filename: filename}
+          ct -> {data, filename: filename, content_type: ct}
+        end
+
+      multipart = [{"options", Jason.encode!(to_body(params, @parse_file_key_mapping))}, {"file", file_part}]
+
+      Req.post(client(opts), url: "/parse", form_multipart: multipart)
+    end
+  end
+
+
+  @doc """
+  Bang variant of `parse_file`. Raises on error.
+  """
+  @spec parse_file!(keyword(), keyword(), keyword()) :: Req.Response.t()
+  def parse_file!(file, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @parse_file_schema)
+    filename = Keyword.fetch!(file, :filename)
+    data = Keyword.fetch!(file, :data)
+    content_type = Keyword.get(file, :content_type)
+
+    if not is_binary(filename) or filename == "" do
+      raise ArgumentError, "filename cannot be empty"
+    end
+
+    if is_nil(data) do
+      raise ArgumentError, "file data cannot be empty"
+    end
+
+    file_part =
+      case content_type do
+        nil -> {data, filename: filename}
+        ct -> {data, filename: filename, content_type: ct}
+      end
+
+    multipart = [{"options", Jason.encode!(to_body(params, @parse_file_key_mapping))}, {"file", file_part}]
+
+    Req.post!(client(opts), url: "/parse", form_multipart: multipart)
+  end
+
+
   @scrape_and_extract_from_url_schema NimbleOptions.new!([
     url: [type: :string, required: true, doc: "The URL to scrape"],
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
-    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`). Some formats require specific options to be set. Example: `['markdown', { type: 'json', schema: {...} }]`."],
+    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`, `{ type: 'question', question: '...' }`, `{ type: 'highlights', query: '...' }`). The legacy `{ type: 'query', prompt: '...', mode: 'freeform' | 'directQuote' }` format is deprecated."],
     headers: [type: :any, doc: "Headers to send with the request. Can be used to send cookies, user-agent, etc."],
     include_tags: [type: {:list, :string}, doc: "Tags to include in the output."],
     location: [type: :keyword_list, doc: "Location settings for the request. When specified, this will use an appropriate proxy if available and emulate the corresponding language and timezone settings. Defaults to 'US' if not specified."],
@@ -964,7 +1093,7 @@ defmodule Firecrawl do
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
-    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`). Some formats require specific options to be set. Example: `['markdown', { type: 'json', schema: {...} }]`."],
+    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`, `{ type: 'question', question: '...' }`, `{ type: 'highlights', query: '...' }`). The legacy `{ type: 'query', prompt: '...', mode: 'freeform' | 'directQuote' }` format is deprecated."],
     headers: [type: :any, doc: "Headers to send with the request. Can be used to send cookies, user-agent, etc."],
     include_tags: [type: {:list, :string}, doc: "Tags to include in the output."],
     location: [type: :keyword_list, doc: "Location settings for the request. When specified, this will use an appropriate proxy if available and emulate the corresponding language and timezone settings. Defaults to 'US' if not specified."],
@@ -1025,7 +1154,9 @@ defmodule Firecrawl do
     categories: [type: {:list, :any}, doc: "Categories to filter results by. Defaults to [], which means results will not be filtered by any categories."],
     country: [type: :string, doc: "ISO country code for geo-targeting search results (e.g. `US`). For best results, set both this and the `location` parameter."],
     enterprise: [type: {:list, :string}, doc: "Enterprise search options for Zero Data Retention (ZDR). Use `[\"zdr\"]` for end-to-end ZDR (10 credits / 10 results) or `[\"anon\"]` for anonymized ZDR (2 credits / 10 results). Must be enabled for your team."],
+    exclude_domains: [type: {:list, :string}, doc: "Domains to exclude from search results."],
     ignore_invalid_urls: [type: :boolean, doc: "Excludes URLs from the search results that are invalid for other Firecrawl endpoints. This helps reduce errors if you are piping data from search into other Firecrawl API endpoints."],
+    include_domains: [type: {:list, :string}, doc: "Domains to include in search results."],
     limit: [type: :integer, doc: "Maximum number of results to return"],
     location: [type: :string, doc: "Location parameter for search results (e.g. `San Francisco,California,United States`). For best results, set both this and the `country` parameter."],
     query: [type: :string, required: true, doc: "The search query"],
@@ -1035,7 +1166,7 @@ defmodule Firecrawl do
     timeout: [type: :integer, doc: "Timeout in milliseconds"]
   ])
 
-  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", ignore_invalid_urls: "ignoreInvalidURLs", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
+  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", exclude_domains: "excludeDomains", ignore_invalid_urls: "ignoreInvalidURLs", include_domains: "includeDomains", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
 
   @doc """
   Search and optionally scrape search results
@@ -1074,7 +1205,7 @@ defmodule Firecrawl do
 
   @start_agent_schema NimbleOptions.new!([
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
-    model: [type: {:in, [:"spark-1-mini", :"spark-1-pro"]}, doc: "The model to use for the agent task. spark-1-mini (default) is 60% cheaper, spark-1-pro offers higher accuracy for complex tasks"],
+    model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro"]}, :string]}, doc: "The model to use for the agent task. spark-1-mini (default) is 60% cheaper, spark-1-pro offers higher accuracy for complex tasks"],
     prompt: [type: :string, required: true, doc: "The prompt describing what data to extract"],
     schema: [type: :any, doc: "Optional JSON schema to structure the extracted data"],
     strict_constrain_to_urls: [type: :boolean, doc: "If true, agent will only visit URLs provided in the urls array"],
@@ -1146,6 +1277,276 @@ defmodule Firecrawl do
   @spec stop_interactive_scrape_browser_session!(String.t(), keyword()) :: Req.Response.t()
   def stop_interactive_scrape_browser_session!(job_id, opts \\ []) do
     Req.delete!(client(opts), url: "/scrape/#{job_id}/interact")
+  end
+
+  @monitor_key_mapping %{
+    name: "name",
+    schedule: "schedule",
+    targets: "targets",
+    webhook: "webhook",
+    notification: "notification",
+    retention_days: "retentionDays",
+    status: "status"
+  }
+
+  @monitor_list_key_mapping %{limit: "limit", offset: "offset"}
+  @monitor_check_list_key_mapping %{limit: "limit", offset: "offset", status: "status"}
+  @monitor_check_key_mapping %{limit: "limit", skip: "skip", status: "status"}
+
+  @monitor_schema NimbleOptions.new!([
+    name: [type: :string],
+    schedule: [type: :any],
+    targets: [type: {:list, :any}],
+    webhook: [type: :any],
+    notification: [type: :any],
+    retention_days: [type: :integer],
+    status: [type: :any]
+  ])
+
+  @monitor_list_schema NimbleOptions.new!([
+    limit: [type: :integer],
+    offset: [type: :integer]
+  ])
+
+  @monitor_check_list_schema NimbleOptions.new!([
+    limit: [type: :integer],
+    offset: [type: :integer],
+    status: [type: :any]
+  ])
+
+  @monitor_check_schema NimbleOptions.new!([
+    limit: [type: :integer],
+    skip: [type: :integer],
+    status: [type: :any]
+  ])
+
+  @doc """
+  Create a scheduled monitor.
+
+  `POST /monitor`
+  """
+  @spec create_monitor(keyword(), keyword()) :: response()
+  def create_monitor(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_schema) do
+      Req.post(client(opts), url: "/monitor", json: to_body(params, @monitor_key_mapping))
+    end
+  end
+
+  @doc """
+  Bang variant of `create_monitor`. Raises on error.
+  """
+  @spec create_monitor!(keyword(), keyword()) :: Req.Response.t()
+  def create_monitor!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_schema)
+    Req.post!(client(opts), url: "/monitor", json: to_body(params, @monitor_key_mapping))
+  end
+
+  @doc """
+  List monitors for the authenticated team.
+
+  `GET /monitor`
+  """
+  @spec list_monitors(keyword(), keyword()) :: response()
+  def list_monitors(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_list_schema) do
+      Req.get(client(opts), url: "/monitor", params: to_query(params, @monitor_list_key_mapping))
+    end
+  end
+
+  @doc """
+  Bang variant of `list_monitors`. Raises on error.
+  """
+  @spec list_monitors!(keyword(), keyword()) :: Req.Response.t()
+  def list_monitors!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_list_schema)
+    Req.get!(client(opts), url: "/monitor", params: to_query(params, @monitor_list_key_mapping))
+  end
+
+  @doc """
+  Get a monitor by ID.
+
+  `GET /monitor/{monitorId}`
+  """
+  @spec get_monitor(String.t(), keyword()) :: response()
+  def get_monitor(monitor_id, opts \\ []) do
+    Req.get(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Bang variant of `get_monitor`. Raises on error.
+  """
+  @spec get_monitor!(String.t(), keyword()) :: Req.Response.t()
+  def get_monitor!(monitor_id, opts \\ []) do
+    Req.get!(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Update a monitor.
+
+  `PATCH /monitor/{monitorId}`
+  """
+  @spec update_monitor(String.t(), keyword(), keyword()) :: response()
+  def update_monitor(monitor_id, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_schema) do
+      Req.patch(client(opts), url: "/monitor/#{monitor_id}", json: to_body(params, @monitor_key_mapping))
+    end
+  end
+
+  @doc """
+  Bang variant of `update_monitor`. Raises on error.
+  """
+  @spec update_monitor!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def update_monitor!(monitor_id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_schema)
+    Req.patch!(client(opts), url: "/monitor/#{monitor_id}", json: to_body(params, @monitor_key_mapping))
+  end
+
+  @doc """
+  Delete a monitor.
+
+  `DELETE /monitor/{monitorId}`
+  """
+  @spec delete_monitor(String.t(), keyword()) :: response()
+  def delete_monitor(monitor_id, opts \\ []) do
+    Req.delete(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Bang variant of `delete_monitor`. Raises on error.
+  """
+  @spec delete_monitor!(String.t(), keyword()) :: Req.Response.t()
+  def delete_monitor!(monitor_id, opts \\ []) do
+    Req.delete!(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Trigger a manual monitor check.
+
+  `POST /monitor/{monitorId}/run`
+  """
+  @spec run_monitor(String.t(), keyword()) :: response()
+  def run_monitor(monitor_id, opts \\ []) do
+    Req.post(client(opts), url: "/monitor/#{monitor_id}/run", json: %{})
+  end
+
+  @doc """
+  Bang variant of `run_monitor`. Raises on error.
+  """
+  @spec run_monitor!(String.t(), keyword()) :: Req.Response.t()
+  def run_monitor!(monitor_id, opts \\ []) do
+    Req.post!(client(opts), url: "/monitor/#{monitor_id}/run", json: %{})
+  end
+
+  @doc """
+  List checks for a monitor.
+
+  `GET /monitor/{monitorId}/checks`
+  """
+  @spec list_monitor_checks(String.t(), keyword(), keyword()) :: response()
+  def list_monitor_checks(monitor_id, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_check_list_schema) do
+      Req.get(client(opts),
+        url: "/monitor/#{monitor_id}/checks",
+        params: to_query(params, @monitor_check_list_key_mapping)
+      )
+    end
+  end
+
+  @doc """
+  Bang variant of `list_monitor_checks`. Raises on error.
+  """
+  @spec list_monitor_checks!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def list_monitor_checks!(monitor_id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_check_list_schema)
+    Req.get!(client(opts),
+      url: "/monitor/#{monitor_id}/checks",
+      params: to_query(params, @monitor_check_list_key_mapping)
+    )
+  end
+
+  @doc """
+  Get a monitor check with paginated page results and inline diffs.
+
+  `GET /monitor/{monitorId}/checks/{checkId}`
+  """
+  @spec get_monitor_check(String.t(), String.t(), keyword(), keyword()) :: response()
+  def get_monitor_check(monitor_id, check_id, params \\ [], opts \\ []) do
+    {auto_paginate, opts} = Keyword.pop(opts, :auto_paginate, true)
+
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_check_schema) do
+      case Req.get(client(opts),
+             url: "/monitor/#{monitor_id}/checks/#{check_id}",
+             params: to_query(params, @monitor_check_key_mapping)
+           ) do
+        {:ok, response} when auto_paginate -> {:ok, paginate_monitor_check_response(response, opts)}
+        result -> result
+      end
+    end
+  end
+
+  @doc """
+  Bang variant of `get_monitor_check`. Raises on error.
+  """
+  @spec get_monitor_check!(String.t(), String.t(), keyword(), keyword()) :: Req.Response.t()
+  def get_monitor_check!(monitor_id, check_id, params \\ [], opts \\ []) do
+    {auto_paginate, opts} = Keyword.pop(opts, :auto_paginate, true)
+    params = NimbleOptions.validate!(params, @monitor_check_schema)
+    response = Req.get!(client(opts),
+      url: "/monitor/#{monitor_id}/checks/#{check_id}",
+      params: to_query(params, @monitor_check_key_mapping)
+    )
+
+    if auto_paginate, do: paginate_monitor_check_response!(response, opts), else: response
+  end
+
+  defp paginate_monitor_check_response(%Req.Response{body: body} = response, opts) when is_map(body) do
+    data = Map.get(body, "data") || %{}
+    pages = Map.get(data, "pages") || []
+    next = Map.get(body, "next") || Map.get(data, "next")
+    pages = fetch_monitor_check_pages(next, pages, opts)
+    data = data |> Map.put("pages", pages) |> Map.put("next", nil)
+    %{response | body: body |> Map.put("data", data) |> Map.put("next", nil)}
+  end
+
+  defp paginate_monitor_check_response(response, _opts), do: response
+
+  defp paginate_monitor_check_response!(%Req.Response{body: body} = response, opts) when is_map(body) do
+    data = Map.get(body, "data") || %{}
+    pages = Map.get(data, "pages") || []
+    next = Map.get(body, "next") || Map.get(data, "next")
+    pages = fetch_monitor_check_pages!(next, pages, opts)
+    data = data |> Map.put("pages", pages) |> Map.put("next", nil)
+    %{response | body: body |> Map.put("data", data) |> Map.put("next", nil)}
+  end
+
+  defp paginate_monitor_check_response!(response, _opts), do: response
+
+  defp fetch_monitor_check_pages(nil, pages, _opts), do: pages
+  defp fetch_monitor_check_pages("", pages, _opts), do: pages
+
+  defp fetch_monitor_check_pages(next, pages, opts) do
+    case Req.get(client(opts), url: next) do
+      {:ok, %Req.Response{body: body}} when is_map(body) ->
+        data = Map.get(body, "data") || %{}
+        next_pages = Map.get(data, "pages") || []
+        next_url = Map.get(body, "next") || Map.get(data, "next")
+        fetch_monitor_check_pages(next_url, pages ++ next_pages, opts)
+
+      _ ->
+        pages
+    end
+  end
+
+  defp fetch_monitor_check_pages!(nil, pages, _opts), do: pages
+  defp fetch_monitor_check_pages!("", pages, _opts), do: pages
+
+  defp fetch_monitor_check_pages!(next, pages, opts) do
+    response = Req.get!(client(opts), url: next)
+    body = response.body
+    data = if is_map(body), do: Map.get(body, "data") || %{}, else: %{}
+    next_pages = Map.get(data, "pages") || []
+    next_url = if is_map(body), do: Map.get(body, "next") || Map.get(data, "next"), else: nil
+    fetch_monitor_check_pages!(next_url, pages ++ next_pages, opts)
   end
 
 end

@@ -400,10 +400,25 @@ const attributesFormatWithOptions = z.strictObject({
 
 type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 
+const questionFormatWithOptions = z.strictObject({
+  type: z.literal("question"),
+  question: z.string().min(1).max(10000),
+});
+
+type QuestionFormatWithOptions = z.output<typeof questionFormatWithOptions>;
+
+const highlightsFormatWithOptions = z.strictObject({
+  type: z.literal("highlights"),
+  query: z.string().min(1).max(10000),
+});
+
+type HighlightsFormatWithOptions = z.output<typeof highlightsFormatWithOptions>;
+
+/** @deprecated Use `question` or `highlights` format instead. */
 const queryFormatWithOptions = z.strictObject({
   type: z.literal("query"),
   prompt: z.string().max(10000),
-  directQuote: z.boolean().optional().default(false),
+  mode: z.enum(["freeform", "directQuote"]).optional().default("freeform"),
 });
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
@@ -419,6 +434,8 @@ export type FormatObject =
   | ChangeTrackingFormatWithOptions
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
+  | QuestionFormatWithOptions
+  | HighlightsFormatWithOptions
   | QueryFormatWithOptions
   | { type: "branding" }
   | { type: "audio" };
@@ -529,6 +546,8 @@ const baseScrapeOptions = z.strictObject({
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
+          questionFormatWithOptions,
+          highlightsFormatWithOptions,
           queryFormatWithOptions,
           z.strictObject({ type: z.literal("audio") }),
         ])
@@ -1082,6 +1101,7 @@ export type Document = {
   json?: any;
   summary?: string;
   answer?: string;
+  highlights?: string;
   branding?: BrandingProfile;
   warning?: string;
   attributes?: {
@@ -1703,6 +1723,18 @@ const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 
+const searchDomainSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine(
+    value =>
+      /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(
+        value,
+      ),
+    "Domain must be a valid hostname without protocol or path",
+  );
+
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
@@ -1738,6 +1770,8 @@ export const searchRequestSchema = z
         ),
       ])
       .optional(),
+    includeDomains: z.array(searchDomainSchema).optional(),
+    excludeDomains: z.array(searchDomainSchema).optional(),
     lang: z.string().optional().prefault("en"),
     enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     country: z.string().optional(),
@@ -1770,6 +1804,8 @@ export const searchRequestSchema = z
                 z.strictObject({ type: z.literal("images") }),
                 z.strictObject({ type: z.literal("summary") }),
                 jsonFormatWithOptions,
+                questionFormatWithOptions,
+                highlightsFormatWithOptions,
                 queryFormatWithOptions,
                 screenshotFormatWithOptions,
               ])
@@ -1790,6 +1826,10 @@ export const searchRequestSchema = z
       })
       .optional(),
   })
+  .refine(
+    x => !(x.includeDomains?.length && x.excludeDomains?.length),
+    "includeDomains and excludeDomains cannot both be specified",
+  )
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =

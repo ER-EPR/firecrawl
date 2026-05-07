@@ -370,7 +370,7 @@ class ClientTest < Minitest::Test
     stub_request(:get, "#{BASE_URL}/v2/team/credit-usage")
       .to_return(
         status: 200,
-        body: JSON.generate(remainingCredits: 500, planCredits: 1000),
+        body: JSON.generate(success: true, data: { remainingCredits: 500, planCredits: 1000 }),
         headers: { "Content-Type" => "application/json" }
       )
 
@@ -454,14 +454,47 @@ class ClientTest < Minitest::Test
     assert_equal 1000, h["waitFor"]
     assert_equal false, h["mobile"]
     assert_equal "stealth", h["proxy"]
-    assert_equal true, h["skipTlsVerification"] # defaults to true
+    assert_equal false, h["skipTlsVerification"] # defaults to false
     refute h.key?("timeout") # nil values should be omitted
   end
 
-  def test_scrape_options_skip_tls_defaults_to_true
+  def test_query_format_to_h
+    format = Firecrawl::Models::QueryFormat.new(
+      prompt: "What is Firecrawl?",
+      mode: Firecrawl::Models::QueryFormat::MODE_DIRECT_QUOTE
+    )
+    opts = Firecrawl::Models::ScrapeOptions.new(formats: [format])
+
+    assert_equal(
+      [{ "type" => "query", "prompt" => "What is Firecrawl?", "mode" => "directQuote" }],
+      opts.to_h["formats"]
+    )
+  end
+
+  def test_question_and_highlights_format_to_h
+    question = Firecrawl::Models::QuestionFormat.new(question: "What is Firecrawl?")
+    highlights = Firecrawl::Models::HighlightsFormat.new(query: "What is Firecrawl?")
+    opts = Firecrawl::Models::ScrapeOptions.new(formats: [question, highlights])
+
+    assert_equal(
+      [
+        { "type" => "question", "question" => "What is Firecrawl?" },
+        { "type" => "highlights", "query" => "What is Firecrawl?" },
+      ],
+      opts.to_h["formats"]
+    )
+  end
+
+  def test_query_format_rejects_invalid_mode
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::QueryFormat.new(prompt: "What is Firecrawl?", mode: "quoted")
+    end
+  end
+
+  def test_scrape_options_skip_tls_defaults_to_false
     opts = Firecrawl::Models::ScrapeOptions.new
-    assert_equal true, opts.skip_tls_verification
-    assert_equal true, opts.to_h["skipTlsVerification"]
+    assert_equal false, opts.skip_tls_verification
+    assert_equal false, opts.to_h["skipTlsVerification"]
   end
 
   def test_scrape_options_skip_tls_can_be_overridden_to_false
@@ -500,12 +533,16 @@ class ClientTest < Minitest::Test
     opts = Firecrawl::Models::SearchOptions.new(
       limit: 10,
       location: "US",
-      tbs: "qdr:w"
+      tbs: "qdr:w",
+      include_domains: ["firecrawl.dev"],
+      exclude_domains: ["example.com"]
     )
     h = opts.to_h
     assert_equal 10, h["limit"]
     assert_equal "US", h["location"]
     assert_equal "qdr:w", h["tbs"]
+    assert_equal ["firecrawl.dev"], h["includeDomains"]
+    assert_equal ["example.com"], h["excludeDomains"]
   end
 
   def test_agent_options_to_h
@@ -530,7 +567,7 @@ class ClientTest < Minitest::Test
       zero_data_retention: true
     )
     h = opts.to_h
-    assert_equal({ "formats" => ["markdown"], "skipTlsVerification" => true }, h["options"])
+    assert_equal({ "formats" => ["markdown"], "skipTlsVerification" => false }, h["options"])
     assert_equal 5, h["maxConcurrency"]
     assert_equal true, h["zeroDataRetention"]
   end

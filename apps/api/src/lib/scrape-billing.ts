@@ -14,7 +14,7 @@ import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 const creditsPerPDFPage = 1;
 const stealthProxyCostBonus = 4;
 const unblockedDomainCostBonus = 4;
-const xTwitterCostBonus = 4;
+const xTwitterCostBonus = 9;
 
 export async function calculateCreditsToBeBilled(
   options: ScrapeOptions,
@@ -75,7 +75,14 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
   }
 
-  if (hasFormatOfType(options.formats, "query")) {
+  const hasQuestionFormat =
+    hasFormatOfType(options.formats, "question") ||
+    hasFormatOfType(options.formats, "query");
+  if (hasQuestionFormat) {
+    creditsToBeBilled += 4;
+  }
+
+  if (hasFormatOfType(options.formats, "highlights")) {
     creditsToBeBilled += 4;
   }
 

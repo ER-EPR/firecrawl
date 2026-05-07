@@ -85,6 +85,96 @@ export async function scrapeWithFailure(
   return raw.body;
 }
 
+// =========================================
+// Monitor API
+// =========================================
+
+export type MonitorCreateInput = {
+  name: string;
+  schedule: { cron: string; timezone?: string };
+  webhook?: { url: string; headers?: Record<string, string> };
+  notification?: {
+    email?: {
+      enabled?: boolean;
+      recipients?: string[];
+      includeDiffs?: boolean;
+    };
+  };
+  targets: Array<
+    | {
+        type: "scrape";
+        urls: string[];
+        scrapeOptions?: Record<string, unknown>;
+      }
+    | {
+        type: "crawl";
+        url: string;
+        crawlOptions?: Record<string, unknown>;
+        scrapeOptions?: Record<string, unknown>;
+      }
+  >;
+  retentionDays?: number;
+};
+
+export async function monitorCreateRaw(
+  body: MonitorCreateInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorListRaw(identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorGetRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorPatchRaw(
+  id: string,
+  body: Partial<MonitorCreateInput> & { status?: "active" | "paused" },
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .patch(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorDeleteRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .delete(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorRunRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/${id}/run`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorCheckRaw(
+  monitorId: string,
+  checkId: string,
+  identity: Identity,
+  query?: Record<string, string | number>,
+) {
+  const req = request(TEST_API_URL)
+    .get(`/v2/monitor/${monitorId}/checks/${checkId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+  return query ? req.query(query) : req;
+}
+
 export async function parseRaw(
   body: {
     options?: Omit<ParseRequestInput, "file">;
@@ -478,7 +568,7 @@ export function expectMapToSucceed(response: Awaited<ReturnType<typeof map>>) {
 // Search API
 // =========================================
 
-async function searchRaw(body: SearchRequestInput, identity: Identity) {
+export async function searchRaw(body: SearchRequestInput, identity: Identity) {
   return await request(TEST_API_URL)
     .post("/v2/search")
     .set("Authorization", `Bearer ${identity.apiKey}`)
@@ -494,6 +584,12 @@ function expectSearchToSucceed(
   expect(typeof response.body.data).toBe("object");
 }
 
+function expectSearchToFail(response: Awaited<ReturnType<typeof searchRaw>>) {
+  expect(response.statusCode).not.toBe(200);
+  expect(response.body.success).toBe(false);
+  expect(typeof response.body.error).toBe("string");
+}
+
 export async function search(
   body: SearchRequestInput,
   identity: Identity,
@@ -501,6 +597,19 @@ export async function search(
   const raw = await searchRaw(body, identity);
   expectSearchToSucceed(raw);
   return raw.body.data;
+}
+
+export async function searchWithFailure(
+  body: SearchRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  details?: unknown;
+}> {
+  const raw = await searchRaw(body, identity);
+  expectSearchToFail(raw);
+  return raw.body;
 }
 
 // =========================================

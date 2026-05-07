@@ -98,6 +98,18 @@ export type ScrapeUrlResponse =
       error: any;
     };
 
+export type BrowserCookie = {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: string;
+  [key: string]: unknown;
+};
+
 export type Meta = {
   id: string;
   url: string;
@@ -141,6 +153,7 @@ export type Meta = {
   costTracking: CostTracking;
   winnerEngine?: Engine;
   abortHandle?: NodeJS.Timeout;
+  audioCookies?: BrowserCookie[];
 };
 
 function buildFeatureFlags(
@@ -507,9 +520,17 @@ async function scrapeURLLoopIter(
     );
     const hasJson = hasFormatOfType(meta.options.formats, "json");
     const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+    const hasQuestion = hasFormatOfType(meta.options.formats, "question");
+    const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
     const hasQuery = hasFormatOfType(meta.options.formats, "query");
     const needsMarkdown =
-      hasMarkdown || hasChangeTracking || hasJson || hasSummary || hasQuery;
+      hasMarkdown ||
+      hasChangeTracking ||
+      hasJson ||
+      hasSummary ||
+      hasQuestion ||
+      hasHighlights ||
+      hasQuery;
 
     let checkMarkdown: string;
     const htmlSize = engineResult.html?.length ?? 0;
@@ -921,6 +942,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     meta.winnerEngine = result.engine;
     let engineResult: EngineScrapeResult = result.result;
+    meta.audioCookies = (
+      engineResult as { audioCookies?: BrowserCookie[] }
+    ).audioCookies;
 
     for (const postprocessor of postprocessors) {
       if (
