@@ -1,8 +1,8 @@
 import { Meta } from "../..";
 import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
-import * as marked from "marked";
 import { downloadFile, fetchFileToBuffer } from "../utils/downloadFile";
+import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
   PDFAntibotError,
   PDFInsufficientTimeError,
@@ -21,7 +21,11 @@ import {
 } from "../../../../controllers/v2/types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
-import { MAX_FILE_SIZE, MILLISECONDS_PER_PAGE } from "./types";
+import {
+  FIRE_PDF_MAX_FILE_SIZE,
+  MAX_FILE_SIZE,
+  MILLISECONDS_PER_PAGE,
+} from "./types";
 import type { PDFProcessorResult } from "./types";
 import {
   emitNativeLogs,
@@ -29,6 +33,7 @@ import {
 } from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
+import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
@@ -155,10 +160,26 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowIneligibleReason: string | null | undefined;
     let shadowPagesNeedingOcr: number[] | undefined;
 
+    const forceFirePDF =
+      !!meta.options.__forceFirePDF && !!config.FIRE_PDF_BASE_URL;
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
 
-    if (!rustEnabled || mode === "ocr") {
+    // Route a percentage of traffic directly to MinerU, bypassing Rust extraction.
+    // Forced Fire PDF takes precedence — don't divert those requests.
+    const routeToMinerU =
+      !forceFirePDF &&
+      config.MINERU_PERCENT > 0 &&
+      Math.random() * 100 < config.MINERU_PERCENT;
+
+    if (routeToMinerU) {
+      logger.info("Routing to MinerU via MINERU_PERCENT", {
+        mineruPercent: config.MINERU_PERCENT,
+        url: meta.rewrittenUrl ?? meta.url,
+      });
+    }
+
+    if (!rustEnabled || mode === "ocr" || forceFirePDF || routeToMinerU) {
       // Legacy / OCR path: detect metadata only, skip Rust extraction.
       // When PDF_RUST_EXTRACT_ENABLE is off this is the only path taken,
       // matching current prod behaviour (detectPdf → MinerU → pdfParse).
@@ -297,7 +318,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         }
 
         if (eligible && pdfResult.markdown) {
-          const html = await marked.parse(pdfResult.markdown, { async: true });
+          const html = await safeMarkdownToHtml(
+            pdfResult.markdown,
+            logger,
+            meta.id,
+          );
           result = { markdown: pdfResult.markdown, html };
         }
       } catch (error) {
@@ -336,13 +361,119 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     // OCR / MU fallback.
-    // Skipped only when Rust extraction is enabled AND mode is "fast".
-    const skipOCR = rustEnabled && mode === "fast";
+    // Skipped only when Rust extraction is enabled AND mode is "fast",
+    // unless we explicitly routed to MinerU via MINERU_PERCENT.
+    const skipOCR = rustEnabled && mode === "fast" && !routeToMinerU;
     if (!result && !skipOCR) {
-      const base64Content = (await readFile(tempFilePath)).toString("base64");
+      const pdfBuffer = await readFile(tempFilePath);
+      const fileSizeBytes = pdfBuffer.length;
+      const base64Content = pdfBuffer.toString("base64");
 
       if (
-        base64Content.length < MAX_FILE_SIZE &&
+        !forceFirePDF &&
+        !routeToMinerU &&
+        config.FIRE_PDF_ENABLE &&
+        config.FIRE_PDF_BASE_URL &&
+        fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE
+      ) {
+        meta.logger.warn("PDF skipped by Fire PDF: exceeds size cap", {
+          method: "scrapePDF",
+          event: "pdf_skipped_size",
+          engine: "firepdf",
+          file_size_bytes: fileSizeBytes,
+          max_size_bytes: FIRE_PDF_MAX_FILE_SIZE,
+          scrape_id: meta.id,
+          team_id: meta.internalOptions.teamId,
+        });
+      }
+
+      // Route a percentage of traffic to Fire PDF instead of MinerU.
+      // forceFirePDF always wins; skip percentage-based Fire PDF when
+      // we explicitly routed to MinerU via MINERU_PERCENT.
+      const useFirePDF =
+        forceFirePDF ||
+        (!routeToMinerU &&
+          config.FIRE_PDF_ENABLE &&
+          config.FIRE_PDF_BASE_URL &&
+          fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE &&
+          Math.random() * 100 < config.FIRE_PDF_PERCENT);
+
+      if (useFirePDF) {
+        try {
+          result = await scrapePDFWithFirePDF(
+            {
+              ...meta,
+              logger: meta.logger.child({
+                method: "scrapePDF/firePDF",
+              }),
+            },
+            base64Content,
+            maxPages,
+            effectivePageCount,
+          );
+          effectivePageCount = reconcilePageCountWithFirePdf(
+            effectivePageCount,
+            result,
+          );
+        } catch (error) {
+          if (
+            error instanceof RemoveFeatureError ||
+            error instanceof AbortManagerThrownError
+          ) {
+            throw error;
+          }
+          if (forceFirePDF) {
+            meta.logger.error("FirePDF failed (forced, no fallback)", {
+              method: "scrapePDF/firePDF",
+              error,
+            });
+            throw error;
+          }
+          meta.logger.warn("FirePDF failed -- falling back to MinerU", {
+            method: "scrapePDF/firePDF",
+            error,
+            event: "pdf_engine_fallback",
+            scrape_id: meta.id,
+            team_id: meta.internalOptions.teamId,
+            from_engine: "firepdf",
+            to_engine: "mineru",
+            // Coerce both to strings defensively — if someone throws a
+            // non-Error (e.g. a plain object or primitive), `.name` /
+            // `.message` could be undefined or non-string, and `.slice` would
+            // throw inside the fallback logger, masking the original failure.
+            error_class:
+              (error as { name?: unknown })?.name != null
+                ? String((error as { name?: unknown }).name)
+                : undefined,
+            error_message: String(
+              (error as { message?: unknown })?.message ?? "",
+            ).slice(0, 500),
+          });
+        }
+      }
+
+      if (
+        !result &&
+        !forceFirePDF &&
+        fileSizeBytes >= MAX_FILE_SIZE &&
+        config.RUNPOD_MU_API_KEY &&
+        config.RUNPOD_MU_POD_ID
+      ) {
+        meta.logger.warn("PDF skipped by RunPod MU: exceeds size cap", {
+          method: "scrapePDF",
+          event: "pdf_skipped_size",
+          engine: "mineru",
+          file_size_bytes: fileSizeBytes,
+          max_size_bytes: MAX_FILE_SIZE,
+          scrape_id: meta.id,
+          team_id: meta.internalOptions.teamId,
+        });
+      }
+
+      if (
+        !result &&
+        !forceFirePDF &&
+        fileSizeBytes < MAX_FILE_SIZE &&
         config.RUNPOD_MU_API_KEY &&
         config.RUNPOD_MU_POD_ID
       ) {
@@ -441,8 +572,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
-    // Final fallback to PdfParse.
-    if (!result) {
+    // Final fallback to PdfParse (skipped when Fire PDF is forced).
+    if (!result && !forceFirePDF) {
       result = await scrapePDFWithParsePDF(
         {
           ...meta,

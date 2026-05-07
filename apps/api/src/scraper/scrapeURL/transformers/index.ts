@@ -8,9 +8,9 @@ import { extractMetadata } from "../lib/extractMetadata";
 import {
   performLLMExtract,
   performSummary,
-  performQuery,
   performCleanContent,
 } from "./llmExtract";
+import { performQuery } from "./query";
 import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
@@ -128,6 +128,7 @@ async function deriveMarkdownFromHTML(
   document.markdown = await parseMarkdown(document.html, {
     logger: meta.logger,
     requestId,
+    zeroDataRetention: meta.internalOptions.zeroDataRetention,
   });
 
   if (
@@ -150,6 +151,7 @@ async function deriveMarkdownFromHTML(
     document.markdown = await parseMarkdown(document.html, {
       logger: meta.logger,
       requestId,
+      zeroDataRetention: meta.internalOptions.zeroDataRetention,
     });
 
     meta.logger.info("Fallback to full content extraction completed", {
@@ -178,6 +180,7 @@ async function deriveLinksFromHTML(
     rate > 0 && Math.random() <= rate && !!config.INDEXER_RABBITMQ_URL;
 
   const forwardToIndexer =
+    !meta.internalOptions.isParse &&
     !!meta.internalOptions.teamId &&
     !meta.internalOptions.teamId?.includes("robots-txt") &&
     !meta.internalOptions.teamId?.includes("sitemap") &&
@@ -531,10 +534,10 @@ const transformerStack: Transformer[] = [
   performQuery,
   performAttributes,
   performAgent,
+  removeBase64Images,
   deriveDiff,
   fetchAudio,
   coerceFieldsToFormats,
-  removeBase64Images,
 ];
 
 export async function executeTransformers(

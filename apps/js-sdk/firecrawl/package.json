@@ -1,6 +1,6 @@
 {
   "name": "@mendable/firecrawl-js",
-  "version": "4.18.0",
+  "version": "4.20.0",
   "description": "JavaScript SDK for Firecrawl API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,7 +26,7 @@
   "author": "Mendable.ai",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.13.5",
+    "axios": "1.15.0",
     "firecrawl": "4.16.0",
     "typescript-event-target": "^1.1.1",
     "zod": "^3.23.8",
@@ -67,7 +67,11 @@
       "@isaacs/brace-expansion@<=5.0.0": ">=5.0.1",
       "minimatch@<10.2.3": ">=10.2.3",
       "rollup@<4.59.0": ">=4.59.0",
-      "picomatch@<4.0.4": ">=4.0.4"
+      "picomatch@<4.0.4": ">=4.0.4",
+      "handlebars": ">=4.7.9",
+      "brace-expansion": ">=5.0.5",
+      "axios@<1.15.0": "1.15.0",
+      "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
     }
   }
 }

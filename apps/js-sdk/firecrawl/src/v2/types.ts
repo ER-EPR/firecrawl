@@ -66,6 +66,22 @@ export type FormatOption =
   | AttributesFormat
   | QueryFormat;
 
+export type ParseFormatString = Exclude<
+  FormatString,
+  'screenshot' | 'changeTracking' | 'branding'
+>;
+
+export interface ParseFormat {
+  type: ParseFormatString;
+}
+
+export type ParseFormatOption =
+  | ParseFormatString
+  | ParseFormat
+  | JsonFormat
+  | AttributesFormat
+  | QueryFormat;
+
 export interface LocationConfig {
   country?: string;
   languages?: string[];
@@ -164,6 +180,7 @@ export interface ScrapeOptions {
   maxAge?: number;
   minAge?: number;
   storeInCache?: boolean;
+  lockdown?: boolean;
   profile?: {
     name: string;
     saveChanges?: boolean;
@@ -171,6 +188,37 @@ export interface ScrapeOptions {
   integration?: string;
   origin?: string;
 }
+
+export type ParseFileData =
+  | Blob
+  | File
+  | Buffer
+  | Uint8Array
+  | ArrayBuffer
+  | string;
+
+export interface ParseFile {
+  data: ParseFileData;
+  filename: string;
+  contentType?: string;
+}
+
+export type ParseOptions = Omit<
+  ScrapeOptions,
+  | 'formats'
+  | 'waitFor'
+  | 'mobile'
+  | 'actions'
+  | 'location'
+  | 'maxAge'
+  | 'minAge'
+  | 'storeInCache'
+  | 'lockdown'
+  | 'proxy'
+> & {
+  formats?: ParseFormatOption[];
+  proxy?: 'basic' | 'auto';
+};
 
 export interface WebhookConfig {
   url: string;
@@ -482,6 +530,8 @@ export interface CrawlOptions {
   crawlEntireDomain?: boolean;
   allowExternalLinks?: boolean;
   allowSubdomains?: boolean;
+  ignoreRobotsTxt?: boolean;
+  robotsUserAgent?: string | null;
   delay?: number | null;
   maxConcurrency?: number | null;
   webhook?: string | WebhookConfig | null;

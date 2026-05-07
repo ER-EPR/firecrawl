@@ -84,7 +84,9 @@ export async function scrapeController(
       }
 
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" || (req.body.zeroDataRetention ?? false);
+        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        (req.body.zeroDataRetention ?? false) ||
+        (req.body.lockdown ?? false);
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "scrape" as const, jobId };
@@ -304,6 +306,17 @@ export async function scrapeController(
           }
 
           if (e.code === "SCRAPE_NO_CACHED_DATA") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 404,
+            });
+            return res.status(404).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "SCRAPE_LOCKDOWN_CACHE_MISS") {
             setSpanAttributes(span, {
               "scrape.status_code": 404,
             });

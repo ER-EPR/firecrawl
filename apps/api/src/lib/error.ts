@@ -20,12 +20,16 @@ export type ErrorCodes =
   | "SCRAPE_ACTION_ERROR"
   | "SCRAPE_RACED_REDIRECT_ERROR"
   | "SCRAPE_NO_CACHED_DATA"
+  | "SCRAPE_LOCKDOWN_CACHE_MISS"
   | "SCRAPE_SITEMAP_ERROR"
   | "SCRAPE_ACTIONS_NOT_SUPPORTED"
   | "SCRAPE_BRANDING_NOT_SUPPORTED"
   | "AGENT_INDEX_ONLY"
   | "SCRAPE_AUDIO_UNSUPPORTED_URL"
+  | "SCRAPE_X_TWITTER_CONFIGURATION_ERROR"
+  | "PARSE_UNSUPPORTED_OPTIONS"
   | "CRAWL_DENIAL"
+  | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST";
 
@@ -122,6 +126,25 @@ export class MapTimeoutError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new MapTimeoutError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class MapFailedError extends TransportableError {
+  constructor(message: string) {
+    super("MAP_FAILED", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new MapFailedError(data.message);
     x.stack = data.stack;
     return x;
   }

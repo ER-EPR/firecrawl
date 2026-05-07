@@ -100,6 +100,7 @@ services:
       EXTRACT_WORKER_PORT: ${EXTRACT_WORKER_PORT:-3004}
       WORKER_PORT: ${WORKER_PORT:-3005}
       NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
+      HARNESS_STARTUP_TIMEOUT_MS: ${HARNESS_STARTUP_TIMEOUT_MS:-60000}
       ENV: local
     depends_on:
       redis:
@@ -178,6 +179,10 @@ services:
         compress: "true"
   
   nuq-postgres:
+    # NOTE: If you don't want to build the image locally,
+    # comment out the build: statement and uncomment the image: statement
+    # image: ghcr.io/firecrawl/nuq-postgres:latest
+    #build: apps/nuq-postgres
     image: jcr.savorcare.com/ghcr/firecrawl/nuq-postgres:latest
     restart: unless-stopped
     environment:

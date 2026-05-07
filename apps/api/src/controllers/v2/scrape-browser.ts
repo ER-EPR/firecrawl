@@ -37,8 +37,11 @@ import {
 } from "../../lib/scrape-interact/scrape-replay";
 import {
   executePromptViaBrowserAgent,
+  executeCodeViaBrowserSession,
   AgentResult,
 } from "../../lib/scrape-interact/browser-agent";
+import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { RequestWithAuth, ScrapeOptions } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
@@ -50,6 +53,7 @@ import {
   INTERACT_CREDITS_PER_HOUR,
   calculateBrowserSessionCredits,
 } from "../../lib/browser-billing";
+import { autumnService } from "../../services/autumn/autumn.service";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -216,6 +220,36 @@ export async function scrapeInteractController(
   updateBrowserSessionActivity(session.id).catch(() => {});
 
   // --- Execute: prompt-based agent loop OR direct code ---
+  //
+  // Skip LangSmith tracing entirely for teams with forced zero-data-retention,
+  // matching how tracking.ts skips ClickHouse writes. The trace would otherwise
+  // ship the full prompt, tool I/O, and page snapshots to a third party.
+  const zdrForced = getScrapeZDR(req.acuc?.flags) === "forced";
+
+  // Upstream context from the scrape job — interact extends scrape, so
+  // every run carries the URL / wait / actions / origin that set the stage
+  // for what the agent does on top of it. URLs are stripped of query
+  // strings to avoid leaking PII into LangSmith.
+  const scrapeOptions = (scrape.options ?? {}) as {
+    origin?: string;
+  };
+  const traceScrapeContext = {
+    scrapeUrl: sanitizeUrlForTrace(scrape.url),
+    targetUrl: sanitizeUrlForTrace(replayContext.targetUrl),
+    scrapeWaitForMs: replayContext.waitForMs,
+    scrapeActions: replayContext.actions.length,
+    scrapeOrigin:
+      typeof scrapeOptions.origin === "string"
+        ? scrapeOptions.origin
+        : undefined,
+  };
+
+  // Identity fields below team_id — optional, normalized from null → undefined
+  // so LangSmith metadata filters don't match empty strings.
+  const traceIdentity = {
+    orgId: req.auth.org_id ?? undefined,
+    subUserId: req.acuc?.sub_user_id ?? undefined,
+  };
 
   let execResult: BrowserServiceExecResponse | AgentResult;
 
@@ -230,6 +264,14 @@ export async function scrapeInteractController(
         session.browser_id,
         timeout,
         logger,
+        {
+          sessionId: session.id,
+          scrapeId,
+          teamId: req.auth.team_id,
+          ...traceIdentity,
+          zeroDataRetention: zdrForced,
+          ...traceScrapeContext,
+        },
       );
     } catch (err) {
       logger.error("Agent loop failed", { error: err });
@@ -252,10 +294,17 @@ export async function scrapeInteractController(
     logger.info("Executing code in browser session", { language, timeout });
 
     try {
-      execResult = await browserServiceRequest<BrowserServiceExecResponse>(
-        "POST",
-        `/browsers/${session.browser_id}/exec`,
+      execResult = await executeCodeViaBrowserSession(
+        session.browser_id,
         { code: rawCode!, language, timeout, origin },
+        {
+          sessionId: session.id,
+          scrapeId,
+          teamId: req.auth.team_id,
+          ...traceIdentity,
+          zeroDataRetention: zdrForced,
+          ...traceScrapeContext,
+        },
       );
     } catch (err) {
       logger.error("Failed to execute code via browser service", {
@@ -354,11 +403,14 @@ export async function scrapeStopInteractiveBrowserController(
 
   invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
   removeConcurrencyLimitActiveJob(session.team_id, session.id).catch(error => {
-    logger.error("Failed to remove concurrency limiter entry for browser session", {
-      error,
-      sessionId: session.id,
-      teamId: session.team_id,
-    });
+    logger.error(
+      "Failed to remove concurrency limiter entry for browser session",
+      {
+        error,
+        sessionId: session.id,
+        teamId: session.team_id,
+      },
+    );
   });
 
   if (!claimed) {
@@ -462,7 +514,13 @@ async function createSessionForScrape(
 
   // Credit check (uses base rate — actual billing may be higher if prompts are used)
   const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-  if (req.acuc && req.acuc.remaining_credits < estimatedCredits) {
+  const autumnResult = await autumnService.checkCredits({
+    teamId: req.auth.team_id,
+    value: estimatedCredits,
+    properties: { source: "scrapeBrowserCreate", path: req.path },
+  });
+
+  if (autumnResult !== null && !autumnResult.allowed) {
     return {
       status: 402,
       body: {

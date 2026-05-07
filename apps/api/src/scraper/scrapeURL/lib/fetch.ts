@@ -91,7 +91,12 @@ export async function robustFetch<
             file_content: undefined,
           },
         }
-      : body,
+      : body?.pdf
+        ? {
+            ...body,
+            pdf: undefined,
+          }
+        : body,
     logger: undefined,
   };
 
@@ -152,7 +157,7 @@ export async function robustFetch<
           });
           throw new Error("Request failed", {
             cause: {
-              params,
+              params: logParams,
               requestId,
               error,
             },

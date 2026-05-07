@@ -1,10 +1,9 @@
 import { Meta } from "../..";
 import { config } from "../../../../config";
-import * as marked from "marked";
 import { robustFetch } from "../../lib/fetch";
+import { safeMarkdownToHtml } from "./markdownToHtml";
 import { z } from "zod";
 import path from "node:path";
-import { runSelfHostedOCRExperiment } from "./selfHostedOCR";
 import {
   getPdfResultFromCache,
   savePdfResultToCache,
@@ -189,7 +188,7 @@ export async function scrapePDFWithRunPodMU(
 
   const processorResult = {
     markdown: result.markdown,
-    html: await marked.parse(result.markdown, { async: true }),
+    html: await safeMarkdownToHtml(result.markdown, meta.logger, meta.id),
   };
 
   if (!meta.internalOptions.zeroDataRetention) {
@@ -210,15 +209,6 @@ export async function scrapePDFWithRunPodMU(
       url: meta.rewrittenUrl ?? meta.url,
       pagesProcessed,
     });
-    if (!meta.internalOptions.zeroDataRetention) {
-      runSelfHostedOCRExperiment(
-        meta,
-        base64Content,
-        { markdown: result.markdown, durationMs },
-        maxPages,
-        pagesProcessed,
-      );
-    }
   }
 
   return processorResult;

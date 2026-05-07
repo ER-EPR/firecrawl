@@ -9,6 +9,28 @@ export class EngineError extends Error {
   }
 }
 
+export class XTwitterConfigurationError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_X_TWITTER_CONFIGURATION_ERROR",
+      "X/Twitter scraping requires XAI_API_KEY to be configured.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new XTwitterConfigurationError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class NoEnginesLeftError extends TransportableError {
   public fallbackList: Engine[];
 
@@ -324,6 +346,28 @@ export class NoCachedDataError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new NoCachedDataError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class LockdownMissError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_LOCKDOWN_CACHE_MISS",
+      "No cached data is available for this request in lockdown mode. Lockdown mode only serves previously cached responses and never makes outbound requests. To resolve this, either disable lockdown mode to allow a fresh scrape, or try again after the URL has been scraped and cached.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new LockdownMissError();
     x.stack = data.stack;
     return x;
   }

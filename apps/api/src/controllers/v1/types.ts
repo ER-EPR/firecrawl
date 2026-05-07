@@ -527,6 +527,7 @@ const baseScrapeOptions = z.strictObject({
   __searchPreviewToken: z.string().optional(),
   __experimental_omce: z.boolean().prefault(false).optional(),
   __experimental_omceDomain: z.string().optional(),
+  __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
 const fire1RefineOpts = {
@@ -1263,6 +1264,7 @@ export type AuthCreditUsageChunk = {
     scrapeAgentPreview?: number;
     browser?: number;
     browserExecute?: number;
+    account?: number;
   };
   concurrency: number;
   flags: TeamFlags;
@@ -1279,7 +1281,8 @@ export type AuthCreditUsageChunk = {
 };
 
 export type TeamFlags = {
-  ignoreRobots?: boolean;
+  ignoreRobots?: "disabled" | "allowed" | "forced";
+  customRobotsAgent?: "disabled" | "allowed";
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;

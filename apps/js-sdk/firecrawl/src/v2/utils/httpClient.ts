@@ -1,4 +1,8 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from "axios";
+import axios, {
+  type AxiosInstance,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+} from "axios";
 import { getVersion } from "./getVersion";
 
 export interface HttpClientOptions {
@@ -7,6 +11,11 @@ export interface HttpClientOptions {
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number; // seconds factor for 0.5, 1, 2...
+}
+
+export interface RequestOptions {
+  headers?: Record<string, string>;
+  timeoutMs?: number;
 }
 
 export class HttpClient {
@@ -25,7 +34,6 @@ export class HttpClient {
       baseURL: this.apiUrl,
       timeout: options.timeoutMs ?? 300000,
       headers: {
-        "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
       transitional: { clarifyTimeoutError: true },
@@ -40,7 +48,9 @@ export class HttpClient {
     return this.apiKey;
   }
 
-  private async request<T = any>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  private async request<T = any>(
+    config: AxiosRequestConfig,
+  ): Promise<AxiosResponse<T>> {
     const version = getVersion();
     config.headers = {
       ...(config.headers || {}),
@@ -50,16 +60,36 @@ export class HttpClient {
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
         const cfg: AxiosRequestConfig = { ...config };
-        // For POST/PUT, ensure origin is present in JSON body too
-        if (cfg.method && ["post", "put", "patch"].includes(cfg.method.toLowerCase())) {
+        const isFormDataBody =
+          typeof FormData !== "undefined" && cfg.data instanceof FormData;
+        const isPlainObjectBody =
+          !isFormDataBody &&
+          cfg.data != null &&
+          typeof cfg.data === "object" &&
+          !Array.isArray(cfg.data);
+
+        // For JSON POST/PUT/PATCH, ensure origin is present in body
+        if (
+          isPlainObjectBody &&
+          cfg.method &&
+          ["post", "put", "patch"].includes(cfg.method.toLowerCase())
+        ) {
           const data = (cfg.data ?? {}) as Record<string, unknown>;
-          cfg.data = { ...data, origin: typeof data.origin === "string" && data.origin.includes("mcp") ? data.origin : `js-sdk@${version}` };
-          
-          // If timeout is specified in the body, use it to override the request timeout
-          if (typeof data.timeout === "number") {
-            cfg.timeout = data.timeout + 5000;
-          }
+          cfg.data = {
+            ...data,
+            origin:
+              typeof data.origin === "string" && data.origin.includes("mcp")
+                ? data.origin
+                : `js-sdk@${version}`,
+          };
         }
+
+        if (isFormDataBody) {
+          cfg.headers = { ...(cfg.headers || {}) };
+          delete (cfg.headers as Record<string, unknown>)["Content-Type"];
+          delete (cfg.headers as Record<string, unknown>)["content-type"];
+        }
+
         const res = await this.instance.request<T>(cfg);
         if (res.status === 502 && attempt < this.maxRetries - 1) {
           await this.sleep(this.backoffFactor * Math.pow(2, attempt));
@@ -80,11 +110,35 @@ export class HttpClient {
   }
 
   private sleep(seconds: number): Promise<void> {
-    return new Promise((r) => setTimeout(r, seconds * 1000));
+    return new Promise(r => setTimeout(r, seconds * 1000));
   }
 
-  post<T = any>(endpoint: string, body: Record<string, unknown>, headers?: Record<string, string>) {
-    return this.request<T>({ method: "post", url: endpoint, data: body, headers });
+  post<T = any>(
+    endpoint: string,
+    body: Record<string, unknown>,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>({
+      method: "post",
+      url: endpoint,
+      data: body,
+      headers: options?.headers,
+      timeout: options?.timeoutMs,
+    });
+  }
+
+  postMultipart<T = any>(
+    endpoint: string,
+    formData: FormData,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>({
+      method: "post",
+      url: endpoint,
+      data: formData,
+      headers: options?.headers,
+      timeout: options?.timeoutMs,
+    });
   }
 
   get<T = any>(endpoint: string, headers?: Record<string, string>) {
@@ -101,4 +155,3 @@ export class HttpClient {
     return headers;
   }
 }
-

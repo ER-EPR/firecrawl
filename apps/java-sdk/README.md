@@ -1,6 +1,6 @@
 # Firecrawl Java SDK
 
-Java SDK for the [Firecrawl](https://firecrawl.dev) v2 web scraping API.
+Java SDK for [Firecrawl](https://firecrawl.dev) — search, scrape, and interact with the web.
 
 ## Prerequisites
 
@@ -147,6 +147,26 @@ System.out.println(doc.getMarkdown());
 System.out.println(doc.getMetadata().get("title"));
 ```
 
+### Parse Uploaded Files
+
+Upload local files (`html`, `pdf`, `docx`, etc.) via multipart form data and parse them synchronously.
+Parse options intentionally exclude browser-only features like change tracking, screenshot, branding, actions, waitFor, location, and mobile.
+
+```java
+ParseFile file = ParseFile.builder()
+    .filename("upload.html")
+    .content("<!DOCTYPE html><html><body><h1>Java Parse</h1></body></html>".getBytes())
+    .contentType("text/html")
+    .build();
+
+Document parsed = client.parse(file,
+    ParseOptions.builder()
+        .formats(List.of("markdown"))
+        .build());
+
+System.out.println(parsed.getMarkdown());
+```
+
 #### JSON Extraction
 
 ```java
@@ -268,7 +288,7 @@ for (Map<String, Object> link : data.getLinks()) {
 Search the web and optionally scrape results.
 
 ```java
-SearchData results = client.search("firecrawl web scraping",
+SearchData results = client.search("firecrawl",
     SearchOptions.builder()
         .limit(10)
         .build());

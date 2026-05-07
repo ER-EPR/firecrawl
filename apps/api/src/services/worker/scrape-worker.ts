@@ -66,6 +66,7 @@ import {
   UnknownError,
 } from "../../lib/error";
 import { serializeTransportableError } from "../../lib/error-serde";
+import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
 import {
   ScrapeJobData,
@@ -283,6 +284,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     if (job.data.concurrencyLimited) {
       doc.warning =
         "This scrape job was throttled at your current concurrency limit. If you'd like to scrape faster, you can upgrade your plan." +
+        (doc.warning ? " " + doc.warning : "");
+    }
+
+    if (
+      job.data.billing?.endpoint === "scrape" &&
+      (job.data.scrapeOptions.actions?.length ?? 0) > 0
+    ) {
+      doc.warning =
+        "You're using the actions parameter. For a more reliable and flexible experience, try the /interact endpoint instead." +
         (doc.warning ? " " + doc.warning : "");
     }
 
@@ -518,9 +528,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           credits_cost: credits_billed ?? 0,
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
+          is_parse: Boolean(job.data.internalOptions?.isParse),
         },
         true,
       );
+
+      trackScrape({
+        scrapeId: job.id,
+        requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
+        teamId: job.data.team_id,
+        url: job.data.url,
+        origin: job.data.origin,
+        kind: job.data.billing?.endpoint ?? "unknown",
+        isSuccessful: true,
+        creditsCost: credits_billed ?? 0,
+        timeTaken: timeTakenInSeconds,
+        zeroDataRetention: job.data.zeroDataRetention,
+      }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
       if (job.data.v1) {
         const sender = await createWebhookSender({
@@ -588,9 +612,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           credits_cost: credits_billed ?? 0,
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
+          is_parse: Boolean(job.data.internalOptions?.isParse),
         },
         false,
       );
+
+      trackScrape({
+        scrapeId: job.id,
+        requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
+        teamId: job.data.team_id,
+        url: job.data.url,
+        origin: job.data.origin,
+        kind: job.data.billing?.endpoint ?? "unknown",
+        isSuccessful: true,
+        creditsCost: credits_billed ?? 0,
+        timeTaken: timeTakenInSeconds,
+        zeroDataRetention: job.data.zeroDataRetention,
+      }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
       if (job.data.skipNuq) {
         // doesn't use GCS for result retrieval, safe to not await
@@ -750,9 +788,24 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         credits_cost: credits_billed ?? 0,
         zeroDataRetention: job.data.zeroDataRetention,
         skipNuq: job.data.skipNuq ?? false,
+        is_parse: Boolean(job.data.internalOptions?.isParse),
       },
       true,
     );
+
+    trackScrape({
+      scrapeId: job.id,
+      requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
+      teamId: job.data.team_id,
+      url: job.data.url,
+      origin: job.data.origin,
+      kind: job.data.billing?.endpoint ?? "unknown",
+      isSuccessful: false,
+      creditsCost: credits_billed ?? 0,
+      timeTaken: timeTakenInSeconds,
+      zeroDataRetention: job.data.zeroDataRetention,
+    }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
+
     return data;
   } finally {
     if (abortTimeoutHandle) clearTimeout(abortTimeoutHandle);

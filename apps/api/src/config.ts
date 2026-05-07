@@ -45,6 +45,7 @@ const configSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
+  XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
@@ -88,6 +89,10 @@ const configSchema = z.object({
   GCS_FIRE_ENGINE_BUCKET_NAME: z.string().optional(),
   GCS_INDEX_BUCKET_NAME: z.string().optional(),
   GCS_MEDIA_BUCKET_NAME: z.string().optional(),
+
+  // ClickHouse (Search Analytics)
+  CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
+  CLICKHOUSE_ANALYTICS_DATABASE: z.string().optional(),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
@@ -158,11 +163,14 @@ const configSchema = z.object({
   PDF_MU_V2_EXPERIMENT: z.string().optional(),
   PDF_MU_V2_EXPERIMENT_PERCENT: z.coerce.number().default(100),
 
-  // Self-Hosted OCR Experiment
-  PDF_OCR_EXPERIMENT_ENABLE: z.stringbool().optional(),
-  PDF_OCR_EXPERIMENT_PERCENT: z.coerce.number().min(0).max(100).default(10),
-  PDF_OCR_BASE_URL: z.string().optional(),
-  PDF_OCR_API_KEY: z.string().optional(),
+  // MinerU direct routing (bypass Rust extraction for a % of traffic)
+  MINERU_PERCENT: z.coerce.number().min(0).max(100).default(0),
+
+  // Fire PDF (replaces MinerU for a % of traffic)
+  FIRE_PDF_ENABLE: z.stringbool().optional(),
+  FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
+  FIRE_PDF_BASE_URL: z.string().optional(),
+  FIRE_PDF_API_KEY: z.string().optional(),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),
@@ -195,6 +203,12 @@ const configSchema = z.object({
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+
+  // LangSmith (tracing for interact agent)
+  LANGSMITH_API_KEY: z.string().optional(),
+  LANGSMITH_PROJECT: z.string().optional(),
+  LANGSMITH_ENDPOINT: z.string().optional(),
+  LANGSMITH_TRACING: z.stringbool().optional(),
 
   // Rate Limiting
   RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
@@ -230,6 +244,9 @@ const configSchema = z.object({
   SENTRY_ERROR_SAMPLE_RATE: z.coerce.number().default(0.05),
   SENTRY_ENVIRONMENT: z.string().default("production"),
   NUQ_POD_NAME: z.string().default("main"),
+
+  // Billing
+  AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
 
   // Miscellaneous
   IDMUX_URL: z.string().optional(),
