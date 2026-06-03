@@ -66,18 +66,20 @@ class FirecrawlClientTest {
                 .build();
 
         ScrapeOptions options = ScrapeOptions.builder()
-                .formats(List.of("markdown", "html", queryFormat))
+                .formats(List.of("markdown", "html", "video", queryFormat))
                 .onlyMainContent(true)
                 .timeout(30000)
                 .mobile(false)
+                .redactPII(true)
                 .build();
 
-        assertEquals(List.of("markdown", "html", queryFormat), options.getFormats());
+        assertEquals(List.of("markdown", "html", "video", queryFormat), options.getFormats());
         assertEquals("query", queryFormat.getType());
         assertEquals(QueryFormat.Mode.DIRECT_QUOTE, queryFormat.getMode());
         assertTrue(options.getOnlyMainContent());
         assertEquals(30000, options.getTimeout());
         assertFalse(options.getMobile());
+        assertTrue(options.getRedactPII());
     }
 
     @Test
@@ -134,6 +136,7 @@ class FirecrawlClientTest {
         ScrapeOptions original = ScrapeOptions.builder()
                 .formats(List.of("markdown"))
                 .timeout(5000)
+                .redactPII(true)
                 .build();
 
         ScrapeOptions modified = original.toBuilder()
@@ -143,6 +146,7 @@ class FirecrawlClientTest {
         assertEquals(5000, original.getTimeout());
         assertEquals(10000, modified.getTimeout());
         assertEquals(List.of("markdown"), modified.getFormats());
+        assertTrue(modified.getRedactPII());
     }
 
     @Test
@@ -228,6 +232,25 @@ class FirecrawlClientTest {
                         .formats(List.of("markdown", "changeTracking"))
                         .build()
         );
+    }
+
+    @Test
+    void testParseOptionsRejectsVideoFormat() {
+        assertThrows(IllegalArgumentException.class, () ->
+                ParseOptions.builder()
+                        .formats(List.of("video"))
+                        .build()
+        );
+    }
+
+    @Test
+    void testParseOptionsBuilderSupportsRedactPII() {
+        ParseOptions options = ParseOptions.builder()
+                .formats(List.of("markdown"))
+                .redactPII(true)
+                .build();
+
+        assertTrue(options.getRedactPII());
     }
 
     // ================================================================

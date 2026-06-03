@@ -16,7 +16,8 @@ public class ModelsTests
             Formats = new List<object> { "markdown", "html" },
             OnlyMainContent = true,
             Timeout = 30000,
-            Mobile = false
+            Mobile = false,
+            RedactPII = true
         };
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
@@ -26,6 +27,7 @@ public class ModelsTests
         Assert.Contains("\"onlyMainContent\":true", json);
         Assert.Contains("\"timeout\":30000", json);
         Assert.Contains("\"mobile\":false", json);
+        Assert.Contains("\"redactPII\":true", json);
     }
 
     [Fact]
@@ -119,6 +121,7 @@ public class ModelsTests
         {
             "markdown": "# Hello World",
             "html": "<h1>Hello World</h1>",
+            "video": "https://storage.googleapis.com/firecrawl/video.mp4",
             "metadata": {
                 "title": "Test",
                 "sourceURL": "https://example.com"
@@ -131,6 +134,7 @@ public class ModelsTests
         Assert.NotNull(doc);
         Assert.Equal("# Hello World", doc.Markdown);
         Assert.Equal("<h1>Hello World</h1>", doc.Html);
+        Assert.Equal("https://storage.googleapis.com/firecrawl/video.mp4", doc.Video);
         Assert.NotNull(doc.Metadata);
         Assert.Null(doc.Warning);
     }

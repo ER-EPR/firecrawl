@@ -74,13 +74,14 @@ class ClientTest < Minitest::Test
       )
       .to_return(
         status: 200,
-        body: JSON.generate(data: { markdown: "# Hello", metadata: { title: "Example", sourceURL: "https://example.com" } }),
+        body: JSON.generate(data: { markdown: "# Hello", video: "https://storage.googleapis.com/firecrawl/video.mp4", metadata: { title: "Example", sourceURL: "https://example.com" } }),
         headers: { "Content-Type" => "application/json" }
       )
 
     doc = @client.scrape("https://example.com")
     assert_instance_of Firecrawl::Models::Document, doc
     assert_equal "# Hello", doc.markdown
+    assert_equal "https://storage.googleapis.com/firecrawl/video.mp4", doc.video
     assert_equal "Example", doc.metadata["title"]
   end
 
@@ -446,7 +447,8 @@ class ClientTest < Minitest::Test
       only_main_content: true,
       wait_for: 1000,
       mobile: false,
-      proxy: "stealth"
+      proxy: "stealth",
+      redact_pii: true
     )
     h = opts.to_h
     assert_equal ["markdown", "html"], h["formats"]
@@ -454,6 +456,7 @@ class ClientTest < Minitest::Test
     assert_equal 1000, h["waitFor"]
     assert_equal false, h["mobile"]
     assert_equal "stealth", h["proxy"]
+    assert_equal true, h["redactPII"]
     assert_equal false, h["skipTlsVerification"] # defaults to false
     refute h.key?("timeout") # nil values should be omitted
   end
@@ -662,18 +665,26 @@ class ClientTest < Minitest::Test
       formats: ["markdown"],
       only_main_content: true,
       timeout: 30000,
-      proxy: "auto"
+      proxy: "auto",
+      redact_pii: true
     )
     h = opts.to_h
     assert_equal ["markdown"], h["formats"]
     assert_equal true, h["onlyMainContent"]
     assert_equal 30000, h["timeout"]
     assert_equal "auto", h["proxy"]
+    assert_equal true, h["redactPII"]
   end
 
   def test_parse_options_rejects_unsupported_format
     assert_raises(ArgumentError) do
       Firecrawl::Models::ParseOptions.new(formats: ["screenshot"])
+    end
+  end
+
+  def test_parse_options_rejects_video_format
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ParseOptions.new(formats: ["video"])
     end
   end
 

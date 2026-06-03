@@ -53,13 +53,26 @@ func TestScrapeOptionsSerializesQuestionAndHighlightsFormats(t *testing.T) {
 
 func TestScrapeOptionsPreservesStringFormats(t *testing.T) {
 	payload, err := json.Marshal(ScrapeOptions{
-		Formats: []string{"markdown"},
+		Formats: []string{"markdown", "video"},
 	})
 	if err != nil {
 		t.Fatalf("Marshal ScrapeOptions: %v", err)
 	}
 
-	if !strings.Contains(string(payload), `"formats":["markdown"]`) {
+	if !strings.Contains(string(payload), `"formats":["markdown","video"]`) {
 		t.Fatalf("serialized string formats = %s", payload)
+	}
+}
+
+func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		RedactPII: Bool(true),
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"redactPII":true`) {
+		t.Fatalf("serialized redactPII = %s", payload)
 	}
 }
