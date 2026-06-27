@@ -215,7 +215,7 @@ services:
   # NUQ_BACKEND=fdb; the api container reads the shared cluster file from the
   # fdb-cluster-file volume. Replaces nuq-postgres once stable.
   foundationdb:
-    image: foundationdb/foundationdb:7.3.63
+    image: jcr.savorcare.com/docker/foundationdb/foundationdb:7.3.63
     environment:
       FDB_NETWORKING_MODE: container
       FDB_COORDINATOR_PORT: 4500
@@ -233,7 +233,7 @@ services:
 
   # one-shot: creates the database on first boot (no-op afterwards)
   foundationdb-init:
-    image: foundationdb/foundationdb:7.3.63
+    image: jcr.savorcare.com/docker/foundationdb/foundationdb:7.3.63
     depends_on:
       - foundationdb
     entrypoint:
