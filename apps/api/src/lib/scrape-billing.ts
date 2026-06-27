@@ -10,6 +10,10 @@ import { hasFormatOfType } from "./format-utils";
 import { TransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import {
+  DataLayerScrapeMetadata,
+  getDataLayerSuccessCredits,
+} from "./data-layer";
 
 const creditsPerPDFPage = 1;
 const stealthProxyCostBonus = 4;
@@ -28,6 +32,7 @@ export async function calculateCreditsToBeBilled(
   flags: TeamFlags,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
+  dataLayer?: DataLayerScrapeMetadata,
 ) {
   const costTrackingJSON: ReturnType<typeof CostTracking.prototype.toJSON> =
     costTracking instanceof CostTracking ? costTracking.toJSON() : costTracking;
@@ -55,6 +60,14 @@ export async function calculateCreditsToBeBilled(
     return creditsToBeBilled;
   }
 
+  const dataLayerCredits = getDataLayerSuccessCredits({
+    dataLayer,
+    statusCode: document.metadata?.statusCode,
+  });
+  if (dataLayerCredits !== null) {
+    return dataLayerCredits;
+  }
+
   let creditsToBeBilled = 1; // Assuming 1 credit per document
 
   if (options.lockdown) {
@@ -70,6 +83,17 @@ export async function calculateCreditsToBeBilled(
     changeTrackingFormat?.modes?.includes("json")
   ) {
     creditsToBeBilled = 5;
+  }
+
+  if (hasFormatOfType(options.formats, "deterministicJson")) {
+    // 10 when this run generated the extractor script, 3 when it reused a
+    // cached one. The codegen call is tagged in deterministicJson/llm/client.ts.
+    const generatedScript = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "deterministic-json" &&
+        call.metadata?.role === "codegen",
+    );
+    creditsToBeBilled = generatedScript ? 10 : 3;
   }
 
   if (

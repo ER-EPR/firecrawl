@@ -39,6 +39,14 @@ warnings.filterwarnings(
     "ignore",
     message='Field name "json" in "Document" shadows an attribute in parent "BaseModel"',
 )
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "json" in "MonitorPageDiff" shadows an attribute in parent "BaseModel"',
+)
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "json" in "MonitorPageSnapshot" shadows an attribute in parent "BaseModel"',
+)
 
 T = TypeVar("T")
 
@@ -262,6 +270,159 @@ class BrandingProfile(BaseModel):
     personality: Optional[Dict[str, Any]] = None
 
 
+class ProductPrice(BaseModel):
+    """A monetary price for a product or variant."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    amount: float
+    currency: Optional[str] = None
+    formatted: Optional[str] = None
+
+
+class ProductAvailability(BaseModel):
+    """Availability information for a product or variant."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    in_stock: bool = Field(alias="inStock")
+    text: Optional[str] = None
+
+
+class ProductImage(BaseModel):
+    """An image associated with a product or variant."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    url: str
+    alt: Optional[str] = None
+
+
+class ProductSale(BaseModel):
+    """Sale information for a variant, holding the pre-sale price."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    original_price: ProductPrice = Field(alias="originalPrice")
+
+
+class ProductVariant(BaseModel):
+    """A purchasable variant of a product (e.g. a size/color combination)."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: Optional[str] = None
+    sku: Optional[str] = None
+    title: Optional[str] = None
+    values: Optional[Dict[str, Any]] = None
+    price: Optional[ProductPrice] = None
+    sale: Optional[ProductSale] = None
+    availability: ProductAvailability
+    images: Optional[List[ProductImage]] = None
+
+
+class ProductProfile(BaseModel):
+    """Structured product information extracted from a website."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    title: str
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    url: str
+    description: Optional[str] = None
+    variants: List[ProductVariant] = Field(default_factory=list)
+
+
+class MenuPrice(BaseModel):
+    """A monetary price for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    amount: float
+    currency: Optional[str] = None
+    formatted: Optional[str] = None
+
+
+class MenuAvailability(BaseModel):
+    """Availability information for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    in_stock: bool = Field(alias="inStock")
+    text: Optional[str] = None
+
+
+class MenuImage(BaseModel):
+    """An image associated with a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    url: str
+    alt: Optional[str] = None
+
+
+class MenuItemIdentifiers(BaseModel):
+    """External identifiers for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    merchant_item_id: Optional[str] = Field(default=None, alias="merchantItemId")
+
+
+class MenuItem(BaseModel):
+    """A single item on a menu."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    images: List[MenuImage] = Field(default_factory=list)
+    price: Optional[MenuPrice] = None
+    availability: MenuAvailability
+    dietary: List[str] = Field(default_factory=list)
+    calories: Optional[float] = None
+    option_groups: List[Any] = Field(default_factory=list, alias="optionGroups")
+    identifiers: MenuItemIdentifiers = Field(default_factory=MenuItemIdentifiers)
+    url: Optional[str] = None
+    source_url: str = Field(alias="sourceUrl")
+
+
+class MenuSection(BaseModel):
+    """An ordered group of menu items."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    items: List[MenuItem] = Field(default_factory=list)
+
+
+class MenuMerchant(BaseModel):
+    """The merchant a menu belongs to."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    name: str
+    type: Optional[str] = None
+    location: Optional[Any] = None
+
+
+class MenuProfile(BaseModel):
+    """Structured menu information extracted from a website."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    is_menu: bool = Field(alias="isMenu")
+    confidence: float
+    merchant: MenuMerchant
+    currency: Optional[str] = None
+    sections: List[MenuSection] = Field(default_factory=list)
+    source_url: str = Field(alias="sourceUrl")
+
+
 RedactPIIEntity = Literal[
     "PERSON",
     "EMAIL",
@@ -270,56 +431,6 @@ RedactPIIEntity = Literal[
     "FINANCIAL",
     "SECRET",
 ]
-
-PIISource = Literal["model", "heuristics", "unknown"]
-
-
-class PIISpan(BaseModel):
-    """A single PII detection in the source markdown."""
-
-    start: int
-    end: int
-    # Unified entity bucket. Present when `kind` maps onto one of the
-    # public entity buckets; omitted when fire-privacy returned a
-    # recognizer kind that doesn't map.
-    entity: Optional[RedactPIIEntity] = None
-    # Granular recognizer label from fire-privacy (e.g. PRIVATE_PERSON,
-    # EMAIL_ADDRESS). Prefer `entity` for taxonomy-level checks.
-    kind: str
-    source: PIISource
-    # Confidence in [0, 1] when the recognizer supplied one.
-    score: Optional[float] = None
-
-
-# ok      — redaction completed; redactedMarkdown is the result.
-# skipped — redaction was not performed; see `reason`.
-# failed  — redaction was attempted but did not produce a usable result;
-#           see `reason`. redactedMarkdown is None.
-PIIStatus = Literal["ok", "skipped", "failed"]
-
-# Always set when status != "ok".
-PIIReason = Literal[
-    "empty_input",
-    "too_large",
-    "upstream_skipped",
-    "service_unavailable",
-    "timeout",
-    "error",
-]
-
-
-class PIIBlock(BaseModel):
-    """Result of the PII redaction step."""
-
-    status: PIIStatus
-    reason: Optional[PIIReason] = None
-    redacted_markdown: Optional[str] = Field(default=None, alias="redactedMarkdown")
-    spans: List[PIISpan] = []
-    # Span count per public entity bucket. Spans whose `kind` doesn't
-    # map onto a bucket are not counted.
-    counts: Dict[RedactPIIEntity, int] = {}
-
-    model_config = {"populate_by_name": True}
 
 
 class Document(BaseModel):
@@ -342,7 +453,8 @@ class Document(BaseModel):
     warning: Optional[str] = None
     change_tracking: Optional[Dict[str, Any]] = None
     branding: Optional[BrandingProfile] = None
-    pii: Optional[PIIBlock] = None
+    product: Optional[ProductProfile] = None
+    menu: Optional[MenuProfile] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
@@ -466,10 +578,11 @@ FormatString = Literal[
     "json",
     "attributes",
     "branding",
+    "product",
+    "menu",
     "query",
     "audio",
     "video",
-    "pii",
     # snake_case versions (user-friendly)
     "raw_html",
     "change_tracking",
@@ -985,16 +1098,22 @@ class MonitorEmailRecipientSubscription(BaseModel):
 
 
 class MonitorTarget(BaseModel):
-    """A scrape or crawl target stored on a monitor."""
+    """A scrape, crawl, or search target stored on a monitor."""
 
     model_config = {"extra": "allow", "populate_by_name": True}
 
     id: Optional[str] = None
-    type: Literal["scrape", "crawl"]
+    type: Literal["scrape", "crawl", "search"]
     urls: Optional[List[str]] = None
     url: Optional[str] = None
     scrape_options: Optional[Union[ScrapeOptions, Dict[str, Any]]] = Field(default=None, alias="scrapeOptions")
     crawl_options: Optional[Dict[str, Any]] = Field(default=None, alias="crawlOptions")
+    # search target fields
+    queries: Optional[List[str]] = None
+    search_window: Optional[Literal["5m", "15m", "1h", "6h", "24h", "7d"]] = Field(default=None, alias="searchWindow")
+    include_domains: Optional[List[str]] = Field(default=None, alias="includeDomains")
+    exclude_domains: Optional[List[str]] = Field(default=None, alias="excludeDomains")
+    max_results: Optional[int] = Field(default=None, alias="maxResults")
 
 
 class MonitorCreateRequest(BaseModel):
@@ -1079,12 +1198,30 @@ class MonitorPageJudgment(BaseModel):
     meaningful_changes: List[MonitorMeaningfulChange] = Field(default_factory=list, alias="meaningfulChanges")
 
 
+class MonitorTargetResult(BaseModel):
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    target_id: str = Field(alias="targetId")
+    type: Literal["scrape", "crawl", "search"]
+    expected_jobs: Optional[List[str]] = Field(default=None, alias="expectedJobs")
+    crawl_id: Optional[str] = Field(default=None, alias="crawlId")
+    search_completed: Optional[bool] = Field(default=None, alias="searchCompleted")
+    result_count: Optional[int] = Field(default=None, alias="resultCount")
+    matches: Optional[int] = None
+    summary: Optional[str] = None
+    judge_degraded: Optional[bool] = Field(default=None, alias="judgeDegraded")
+    degraded_reason: Optional[str] = Field(default=None, alias="degradedReason")
+    search_credits: Optional[int] = Field(default=None, alias="searchCredits")
+    judge_credits: Optional[int] = Field(default=None, alias="judgeCredits")
+    results_judged: Optional[int] = Field(default=None, alias="resultsJudged")
+
+
 class MonitorCheck(BaseModel):
     model_config = {"populate_by_name": True, "extra": "allow"}
 
     id: str
     monitor_id: str = Field(alias="monitorId")
-    status: Literal["queued", "running", "completed", "failed", "partial", "skipped_overlap"]
+    status: Literal["queued", "running", "completed", "failed", "partial", "skipped_overlap", "skipped_no_credits"]
     trigger: Literal["scheduled", "manual"]
     scheduled_for: Optional[str] = Field(default=None, alias="scheduledFor")
     started_at: Optional[str] = Field(default=None, alias="startedAt")
@@ -1094,7 +1231,7 @@ class MonitorCheck(BaseModel):
     actual_credits: Optional[int] = Field(default=None, alias="actualCredits")
     billing_status: Literal["not_applicable", "reserved", "confirmed", "released", "failed"] = Field(alias="billingStatus")
     summary: MonitorSummary
-    target_results: Optional[Any] = Field(default=None, alias="targetResults")
+    target_results: Optional[List[MonitorTargetResult]] = Field(default=None, alias="targetResults")
     notification_status: Optional[Any] = Field(default=None, alias="notificationStatus")
     error: Optional[str] = None
     created_at: str = Field(alias="createdAt")
@@ -1210,6 +1347,7 @@ class BrowserExecuteResponse(BaseModel):
     """Response from executing code in a browser session."""
 
     success: bool
+    cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None
     output: Optional[str] = None
