@@ -11,7 +11,7 @@ Add `firecrawl` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:firecrawl, "~> 1.0"}
+    {:firecrawl, "~> 1.4"}
   ]
 end
 ```
@@ -43,6 +43,12 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
   formats: ["markdown"]
 )
 
+# Extract video from supported video URLs
+{:ok, response} = Firecrawl.scrape_and_extract_from_url(
+  url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  formats: ["video"]
+)
+
 # Crawl a site
 {:ok, response} = Firecrawl.crawl_urls(
   url: "https://example.com",
@@ -58,6 +64,12 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
 
 # Check crawl status
 {:ok, response} = Firecrawl.get_crawl_status("job-uuid")
+
+# Parse a file (PDF, DOCX, HTML, etc.)
+{:ok, response} = Firecrawl.parse_file(
+  [filename: "report.pdf", data: File.read!("report.pdf"), content_type: "application/pdf"],
+  formats: ["markdown"]
+)
 
 # Self-hosted instance
 {:ok, response} = Firecrawl.scrape_and_extract_from_url(

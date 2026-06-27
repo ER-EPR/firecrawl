@@ -18,6 +18,8 @@ import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
 import { fetchAudio } from "./audio";
+import { fetchVideo } from "./video";
+import { performRedactPII } from "./redactPII";
 import { useIndex, useSearchIndex } from "../../../services/index";
 import { sendDocumentToIndex } from "../engines/index/index";
 import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
@@ -83,7 +85,8 @@ async function deriveMarkdownFromHTML(
   // - changeTracking requires markdown
   // - json format requires markdown (for LLM extraction)
   // - summary format requires markdown (for summarization)
-  // - query format requires markdown (for page-level answers)
+  // - question/highlights/query formats require markdown (for page-level answers)
+  // - redactPII needs markdown as its source text (spans are markdown char offsets)
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasChangeTracking = hasFormatOfType(
     meta.options.formats,
@@ -91,13 +94,19 @@ async function deriveMarkdownFromHTML(
   );
   const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+  const hasQuestion = hasFormatOfType(meta.options.formats, "question");
+  const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
   const hasQuery = hasFormatOfType(meta.options.formats, "query");
+  const hasRedactPII = !!meta.options.redactPII;
   if (
     !hasMarkdown &&
     !hasChangeTracking &&
     !hasJson &&
     !hasSummary &&
+    !hasQuestion &&
+    !hasHighlights &&
     !hasQuery &&
+    !hasRedactPII &&
     !meta.options.onlyCleanContent
   ) {
     return document;
@@ -317,7 +326,13 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
-  const hasQueryFormat = hasFormatOfType(meta.options.formats, "query");
+  const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
+  const hasHighlightsFormat = hasFormatOfType(
+    meta.options.formats,
+    "highlights",
+  );
+  const hasLegacyQueryFormat = hasFormatOfType(meta.options.formats, "query");
+  const hasAnswerFormat = hasQuestionFormat || hasLegacyQueryFormat;
 
   if (!hasMarkdown && document.markdown !== undefined) {
     delete document.markdown;
@@ -432,14 +447,25 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
-  if (!hasQueryFormat && document.answer !== undefined) {
+  if (!hasAnswerFormat && document.answer !== undefined) {
     meta.logger.warn(
-      "Removed answer from Document because query wasn't in formats -- this is wasteful and indicates a bug.",
+      "Removed answer from Document because question/query wasn't in formats -- this is wasteful and indicates a bug.",
     );
     delete document.answer;
-  } else if (hasQueryFormat && document.answer === undefined) {
+  } else if (hasAnswerFormat && document.answer === undefined) {
     meta.logger.warn(
-      "Request had format query, but there was no answer field in the result.",
+      "Request had format question/query, but there was no answer field in the result.",
+    );
+  }
+
+  if (!hasHighlightsFormat && document.highlights !== undefined) {
+    meta.logger.warn(
+      "Removed highlights from Document because highlights wasn't in formats -- this is wasteful and indicates a bug.",
+    );
+    delete document.highlights;
+  } else if (hasHighlightsFormat && document.highlights === undefined) {
+    meta.logger.warn(
+      "Request had format highlights, but there was no highlights field in the result.",
     );
   }
 
@@ -460,6 +486,27 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   } else if (hasAudio && document.audio === undefined) {
     meta.logger.warn(
       "Request had format: audio, but there was no audio field in the result.",
+    );
+  }
+
+  const hasVideo = hasFormatOfType(meta.options.formats, "video");
+  if (!hasVideo && document.video !== undefined) {
+    delete document.video;
+  } else if (hasVideo && document.video === undefined) {
+    meta.logger.warn(
+      "Request had format: video, but there was no video field in the result.",
+    );
+  }
+
+  // Redaction itself is controlled by redactPII. Keep internal redaction
+  // details only when explicitly requested.
+  const hasPii = hasFormatOfType(meta.options.formats, "pii");
+  const wantPii = !!(hasPii && meta.options.redactPII);
+  if (!wantPii && document.pii !== undefined) {
+    delete document.pii;
+  } else if (wantPii && document.pii === undefined) {
+    meta.logger.warn(
+      "Redaction details were requested, but there was no pii field in the result.",
     );
   }
 
@@ -522,6 +569,7 @@ const transformerStack: Transformer[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,
+  performRedactPII,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveBrandingFromActions,
@@ -537,6 +585,7 @@ const transformerStack: Transformer[] = [
   removeBase64Images,
   deriveDiff,
   fetchAudio,
+  fetchVideo,
   coerceFieldsToFormats,
 ];
 

@@ -16,6 +16,7 @@ import {
 } from "./checkStatus";
 import {
   ActionError,
+  AddFeatureError,
   EngineError,
   DNSResolutionError,
   SiteError,
@@ -137,7 +138,8 @@ async function performFireEngineScrape<
             error instanceof ActionError ||
             error instanceof UnsupportedFileError ||
             error instanceof FEPageLoadFailed ||
-            error instanceof ProxySelectionError
+            error instanceof ProxySelectionError ||
+            error instanceof AddFeatureError
           ) {
             fireEngineDelete(
               logger.child({
@@ -264,6 +266,12 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.team_id": meta.internalOptions.teamId,
     });
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+    const hasAudio = hasFormatOfType(meta.options.formats, "audio");
+    const hasVideo = hasFormatOfType(meta.options.formats, "video");
+    const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
+      meta,
+      new URL(meta.rewrittenUrl ?? meta.url),
+    );
     const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
     const effectiveWait =
       meta.options.waitFor != null && meta.options.waitFor !== 0
@@ -316,6 +324,14 @@ export async function scrapeURLWithFireEngineChromeCDP(
             },
           ]
         : []),
+      ...(hasAudio || hasVideo || shouldRunYoutubePostprocessor
+        ? ([
+            {
+              type: "getCookies",
+              metadata: { __firecrawl_internal: true },
+            },
+          ] as unknown as InternalAction[])
+        : []),
     ];
 
     const totalWait = actions.reduce(
@@ -325,10 +341,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
 
     const shouldAllowMedia =
       hasFormatOfType(meta.options.formats, "branding") ||
-      youtubePostprocessor.shouldRun(
-        meta,
-        new URL(meta.rewrittenUrl ?? meta.url),
-      );
+      shouldRunYoutubePostprocessor;
 
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
@@ -421,6 +434,9 @@ export async function scrapeURLWithFireEngineChromeCDP(
           };
         }
       });
+    const audioCookies = (response.actionResults ?? [])
+      .filter(x => x.type === "getCookies")
+      .flatMap(x => x.result.cookies);
 
     return {
       url: response.url ?? meta.url,
@@ -451,6 +467,9 @@ export async function scrapeURLWithFireEngineChromeCDP(
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       youtubeTranscriptContent: response.youtubeTranscriptContent,
       timezone: response.timezone,
+      ...(hasAudio || hasVideo || shouldRunYoutubePostprocessor
+        ? { audioCookies }
+        : {}),
     };
   });
 }

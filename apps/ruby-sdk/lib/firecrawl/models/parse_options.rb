@@ -5,15 +5,15 @@ module Firecrawl
     # Options for parsing uploaded files via `/v2/parse`.
     #
     # Parse does not support browser-rendering features (actions, waitFor,
-    # location, mobile) nor screenshot/branding/changeTracking formats. The
+    # location, mobile) nor screenshot/branding/audio/video/changeTracking formats. The
     # proxy field only accepts "auto" or "basic".
     class ParseOptions
-      UNSUPPORTED_FORMATS = %w[changeTracking screenshot screenshot@fullPage branding].freeze
+      UNSUPPORTED_FORMATS = %w[changeTracking screenshot screenshot@fullPage branding audio video].freeze
 
       FIELDS = %i[
         formats headers include_tags exclude_tags only_main_content
         timeout parsers skip_tls_verification remove_base64_images
-        block_ads proxy integration json_options
+        block_ads proxy integration redact_pii json_options
       ].freeze
 
       attr_reader(*FIELDS)
@@ -26,7 +26,7 @@ module Firecrawl
 
       def to_h
         {
-          "formats" => formats,
+          "formats" => formats&.map { |fmt| format_value(fmt) },
           "headers" => headers,
           "includeTags" => include_tags,
           "excludeTags" => exclude_tags,
@@ -38,6 +38,7 @@ module Firecrawl
           "blockAds" => block_ads,
           "proxy" => proxy,
           "integration" => integration,
+          "redactPII" => redact_pii,
           "jsonOptions" => json_options.is_a?(Hash) ? json_options : json_options&.to_h,
         }.compact
       end
@@ -68,6 +69,10 @@ module Firecrawl
         else
           fmt.respond_to?(:type) ? fmt.type : nil
         end
+      end
+
+      def format_value(fmt)
+        fmt.respond_to?(:to_h) ? fmt.to_h : fmt
       end
     end
   end

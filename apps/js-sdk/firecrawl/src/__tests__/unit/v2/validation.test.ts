@@ -9,6 +9,11 @@ describe("v2 utils: validation", () => {
     expect(() => ensureValidFormats(formats)).toThrow(/json format must be an object/i);
   });
 
+  test("ensureValidFormats: accepts video string format", () => {
+    const formats: FormatOption[] = ["markdown", "video"];
+    expect(() => ensureValidFormats(formats)).not.toThrow();
+  });
+
   test("ensureValidFormats: json format requires prompt or schema", () => {
     // Valid cases - should not throw
     const valid1: FormatOption[] = [{ type: "json", prompt: "p" } as any];
@@ -54,6 +59,27 @@ describe("v2 utils: validation", () => {
     ];
     expect(() => ensureValidFormats(formats)).not.toThrow();
     expect((formats[0] as any).viewport).toEqual({ width: 800, height: 600 });
+  });
+
+  test("ensureValidFormats: accepts question, highlights, and deprecated query formats", () => {
+    const formats: FormatOption[] = [
+      { type: "question", question: "What is Firecrawl?" },
+      { type: "highlights", query: "What is Firecrawl?" },
+      { type: "query", prompt: "What is Firecrawl?", mode: "directQuote" },
+    ];
+    expect(() => ensureValidFormats(formats)).not.toThrow();
+  });
+
+  test("ensureValidFormats: validates question, highlights, and deprecated query fields", () => {
+    expect(() =>
+      ensureValidFormats([{ type: "question", question: "" } as any]),
+    ).toThrow(/question format requires/i);
+    expect(() =>
+      ensureValidFormats([{ type: "highlights", query: "" } as any]),
+    ).toThrow(/highlights format requires/i);
+    expect(() =>
+      ensureValidFormats([{ type: "query", prompt: "p", mode: "quoted" } as any]),
+    ).toThrow(/query format mode/i);
   });
 
   test("ensureValidScrapeOptions: leaves parsers untouched", () => {

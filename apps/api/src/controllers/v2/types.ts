@@ -400,10 +400,25 @@ const attributesFormatWithOptions = z.strictObject({
 
 type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 
+const questionFormatWithOptions = z.strictObject({
+  type: z.literal("question"),
+  question: z.string().min(1).max(10000),
+});
+
+type QuestionFormatWithOptions = z.output<typeof questionFormatWithOptions>;
+
+const highlightsFormatWithOptions = z.strictObject({
+  type: z.literal("highlights"),
+  query: z.string().min(1).max(10000),
+});
+
+type HighlightsFormatWithOptions = z.output<typeof highlightsFormatWithOptions>;
+
+/** @deprecated Use `question` or `highlights` format instead. */
 const queryFormatWithOptions = z.strictObject({
   type: z.literal("query"),
   prompt: z.string().max(10000),
-  directQuote: z.boolean().optional().default(false),
+  mode: z.enum(["freeform", "directQuote"]).optional().default("freeform"),
 });
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
@@ -419,9 +434,13 @@ export type FormatObject =
   | ChangeTrackingFormatWithOptions
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
+  | QuestionFormatWithOptions
+  | HighlightsFormatWithOptions
   | QueryFormatWithOptions
   | { type: "branding" }
-  | { type: "audio" };
+  | { type: "audio" }
+  | { type: "video" }
+  | { type: "pii" };
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
@@ -431,6 +450,11 @@ const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
   mode: pdfModeSchema.optional(),
   maxPages: z.int().positive().finite().max(10000).optional(),
+  // Experimental: route this request through the fire-pdf async pipeline
+  // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
+  // to sync on any async-path failure, so user-visible behavior is unchanged
+  // beyond latency variance. Underscored to mark as internal/experimental.
+  __firePdfAsync: z.boolean().optional(),
 });
 
 const parsersSchema = z
@@ -475,6 +499,17 @@ export function getPDFMode(parsers?: Parsers): PDFMode {
   return "auto";
 }
 
+export function getFirePdfAsync(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (parser === "pdf") return false;
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.__firePdfAsync === true;
+    }
+  }
+  return false;
+}
+
 function transformIframeSelector(selector: string): string {
   return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, match => {
     const prefix = match.match(/^[\s,]/)?.[0] || "";
@@ -504,6 +539,51 @@ const locationSchema = z
   })
   .optional();
 
+// Unified entity taxonomy exposed to callers. Maps to fire-privacy's
+// internal span kinds (PRIVATE_PERSON / EMAIL_ADDRESS / ACCOUNT_NUMBER /
+// etc.) inside the fire-privacy client. Names chosen to match the public
+// surface; if a caller asks for "EMAIL" they get email-shaped spans
+// regardless of which recognizer found them.
+const REDACT_PII_ENTITIES = [
+  "PERSON",
+  "EMAIL",
+  "PHONE",
+  "LOCATION",
+  "FINANCIAL",
+  "SECRET",
+] as const;
+const redactPIIEntitySchema = z.enum(REDACT_PII_ENTITIES);
+export type RedactPIIEntity = z.infer<typeof redactPIIEntitySchema>;
+
+// Public mode names. Mapped to fire-privacy internal modes
+// (model / both / heuristics) inside the client; the internal "precise"
+// mode is intentionally not exposed.
+//
+// - accurate (default): model only. Best precision (0.87), F1 (0.73).
+//   Cleanest redacted output.
+// - aggressive: model + Presidio + spaCy. Higher recall (0.73) at the
+//   cost of precision (0.68). Compliance use cases.
+// - fast: Presidio only, no model call. ~2x throughput, lower F1.
+const redactPIIOptionsSchema = z.strictObject({
+  mode: z.enum(["accurate", "aggressive", "fast"]).default("accurate"),
+  entities: z.array(redactPIIEntitySchema).optional(),
+  replaceStyle: z.enum(["tag", "mask", "remove"]).default("tag"),
+});
+export type RedactPIIOptions = z.infer<typeof redactPIIOptionsSchema>;
+
+// Boolean is the common case. Object form is for callers who want to
+// tune. After parse: `true` normalizes to defaults; `false` / unset
+// → `undefined`. Downstream code only has to check truthiness.
+const redactPIISchema = z
+  .union([z.boolean(), redactPIIOptionsSchema])
+  .optional()
+  .transform(v => {
+    if (v === undefined || v === false) return undefined;
+    if (v === true) return redactPIIOptionsSchema.parse({});
+    return v;
+  });
+// inferred shape: RedactPIIOptions | undefined after the transform
+
 const baseScrapeOptions = z.strictObject({
   formats: z
     .preprocess(
@@ -529,8 +609,12 @@ const baseScrapeOptions = z.strictObject({
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
+          questionFormatWithOptions,
+          highlightsFormatWithOptions,
           queryFormatWithOptions,
           z.strictObject({ type: z.literal("audio") }),
+          z.strictObject({ type: z.literal("video") }),
+          z.strictObject({ type: z.literal("pii") }),
         ])
         .array()
         .optional()
@@ -575,6 +659,7 @@ const baseScrapeOptions = z.strictObject({
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
   lockdown: z.boolean().prefault(false),
+  redactPII: redactPIISchema,
 
   profile: z
     .object({
@@ -1067,6 +1152,58 @@ export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
 export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
 
+export type PIISource = "model" | "heuristics" | "unknown";
+
+export type PIISpan = {
+  start: number;
+  end: number;
+  // Unified entity bucket. Present when `kind` maps onto one of the public
+  // entity buckets; omitted when fire-privacy returned a recognizer kind we
+  // don't expose (e.g. ORGANIZATION, DATE_TIME). Spans without an entity
+  // are dropped under any `entities` allowlist.
+  entity?: RedactPIIEntity;
+  // Granular recognizer label from fire-privacy (e.g. PRIVATE_PERSON,
+  // EMAIL_ADDRESS, ACCOUNT_NUMBER). Useful for audit / debugging; prefer
+  // `entity` for taxonomy-level checks.
+  kind: string;
+  source: PIISource;
+  // Confidence in [0, 1] when fire-privacy returned a score. Omitted when
+  // the recognizer didn't supply one.
+  score?: number;
+};
+
+// `ok`      — redaction completed; redactedMarkdown is the result.
+// `skipped` — redaction was not performed; see `reason` for why.
+//             redactedMarkdown may be the original text or null.
+// `failed`  — redaction was attempted but did not produce a usable result;
+//             see `reason`. redactedMarkdown is null.
+type PIIStatus = "ok" | "skipped" | "failed";
+
+// Why redaction was skipped or failed. Always set when status !== "ok".
+//   empty_input         — no markdown to redact, or markdown was whitespace
+//   too_large           — input exceeded the redaction-side byte ceiling
+//   upstream_skipped    — fire-privacy reported model_status: "skipped"
+//   service_unavailable — fire-privacy returned 503
+//   timeout             — request exceeded the redaction timeout budget
+//   error               — any other failure (5xx, invalid JSON, network)
+export type PIIReason =
+  | "empty_input"
+  | "too_large"
+  | "upstream_skipped"
+  | "service_unavailable"
+  | "timeout"
+  | "error";
+
+export type PIIBlock = {
+  status: PIIStatus;
+  reason?: PIIReason;
+  redactedMarkdown: string | null;
+  spans: PIISpan[];
+  // Count of spans per public entity bucket. Spans whose `kind` doesn't
+  // map onto a bucket are not counted. Only non-zero entries are present.
+  counts: Partial<Record<RedactPIIEntity, number>>;
+};
+
 export type Document = {
   title?: string;
   description?: string;
@@ -1078,12 +1215,15 @@ export type Document = {
   images?: string[];
   screenshot?: string;
   audio?: string;
+  video?: string;
   extract?: any;
   json?: any;
   summary?: string;
   answer?: string;
+  highlights?: string;
   branding?: BrandingProfile;
   warning?: string;
+  pii?: PIIBlock;
   attributes?: {
     selector: string;
     attribute: string;
@@ -1373,7 +1513,7 @@ export type TeamFlags = {
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
-  searchZDR?: "disabled" | "allowed" | "forced";
+  searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;
@@ -1381,6 +1521,7 @@ export type TeamFlags = {
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
   maxBrowserSessions?: number;
+  researchBeta?: boolean;
 } | null;
 
 interface RequestWithMaybeACUC<
@@ -1703,6 +1844,18 @@ const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 
+const searchDomainSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine(
+    value =>
+      /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(
+        value,
+      ),
+    "Domain must be a valid hostname without protocol or path",
+  );
+
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
@@ -1738,6 +1891,8 @@ export const searchRequestSchema = z
         ),
       ])
       .optional(),
+    includeDomains: z.array(searchDomainSchema).optional(),
+    excludeDomains: z.array(searchDomainSchema).optional(),
     lang: z.string().optional().prefault("en"),
     enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     country: z.string().optional(),
@@ -1770,6 +1925,8 @@ export const searchRequestSchema = z
                 z.strictObject({ type: z.literal("images") }),
                 z.strictObject({ type: z.literal("summary") }),
                 jsonFormatWithOptions,
+                questionFormatWithOptions,
+                highlightsFormatWithOptions,
                 queryFormatWithOptions,
                 screenshotFormatWithOptions,
               ])
@@ -1790,6 +1947,10 @@ export const searchRequestSchema = z
       })
       .optional(),
   })
+  .refine(
+    x => !(x.includeDomains?.length && x.excludeDomains?.length),
+    "includeDomains and excludeDomains cannot both be specified",
+  )
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =
@@ -1900,6 +2061,98 @@ export type SearchResponse =
       };
       creditsUsed: number;
       id: string;
+    };
+
+// =============================================
+// Search Feedback
+// =============================================
+
+const searchFeedbackUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .refine(value => {
+    try {
+      const u = new globalThis.URL(value);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Must be a valid http(s) URL");
+
+const missingContentEntrySchema = z.strictObject({
+  topic: z
+    .string()
+    .trim()
+    .min(1, "topic must not be empty")
+    .max(200, "topic must be 200 characters or fewer"),
+  description: z.string().trim().max(2000).optional(),
+});
+
+export const searchFeedbackSchema = z
+  .strictObject({
+    rating: z.enum(["good", "bad", "partial"]),
+    valuableSources: z
+      .array(
+        z.strictObject({
+          url: searchFeedbackUrlSchema,
+          reason: z.string().trim().max(1000).optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
+    missingContent: z.array(missingContentEntrySchema).max(20).optional(),
+    querySuggestions: z.string().trim().max(2000).optional(),
+    origin: z.string().optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+  })
+  .refine(
+    data => {
+      const hasSources = (data.valuableSources?.length ?? 0) > 0;
+      const hasMissing = (data.missingContent?.length ?? 0) > 0;
+      const hasSuggestions =
+        !!data.querySuggestions && data.querySuggestions.length > 0;
+
+      switch (data.rating) {
+        case "good":
+          return hasSources;
+        case "partial":
+          return hasSources || hasMissing;
+        case "bad":
+          return hasMissing || hasSuggestions;
+      }
+    },
+    {
+      message:
+        "Feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+    },
+  );
+
+export type SearchFeedbackRequest = z.infer<typeof searchFeedbackSchema>;
+export type SearchFeedbackRequestInput = z.input<typeof searchFeedbackSchema>;
+
+export type SearchFeedbackErrorCode =
+  | "SEARCH_NOT_FOUND"
+  | "FEEDBACK_WINDOW_EXPIRED"
+  | "SEARCH_FAILED"
+  | "PREVIEW_TEAM_NOT_ALLOWED"
+  | "TEAM_OPTED_OUT"
+  | "INVALID_BODY"
+  | "DB_DISABLED"
+  | "INTERNAL";
+
+export type SearchFeedbackResponse =
+  | (ErrorResponse & { feedbackErrorCode?: SearchFeedbackErrorCode })
+  | {
+      success: true;
+      feedbackId: string;
+      creditsRefunded: number;
+      alreadySubmitted?: boolean;
+      dailyCapReached?: boolean;
+      creditsRefundedToday?: number;
+      dailyRefundCap?: number;
+      warning?: string;
     };
 
 export type TokenUsage = {

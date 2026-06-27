@@ -13,6 +13,7 @@ import {
   MapRequestInput,
   BatchScrapeRequestInput,
   SearchRequestInput,
+  SearchFeedbackRequestInput,
   ParseRequestInput,
 } from "../../../controllers/v2/types";
 import request from "supertest";
@@ -83,6 +84,119 @@ export async function scrapeWithFailure(
   const raw = await scrapeRaw(body, identity);
   expectScrapeToFail(raw);
   return raw.body;
+}
+
+// =========================================
+// Monitor API
+// =========================================
+
+export type MonitorCreateInput = {
+  name: string;
+  schedule: { cron: string; timezone?: string };
+  webhook?: { url: string; headers?: Record<string, string> };
+  notification?: {
+    email?: {
+      enabled?: boolean;
+      recipients?: string[];
+      includeDiffs?: boolean;
+    };
+  };
+  targets: Array<
+    | {
+        type: "scrape";
+        urls: string[];
+        scrapeOptions?: Record<string, unknown>;
+      }
+    | {
+        type: "crawl";
+        url: string;
+        crawlOptions?: Record<string, unknown>;
+        scrapeOptions?: Record<string, unknown>;
+      }
+  >;
+  retentionDays?: number;
+  goal?: string;
+  judgeEnabled?: boolean;
+  origin?: string;
+};
+
+export async function monitorCreateRaw(
+  body: MonitorCreateInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorListRaw(identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorGetRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorPatchRaw(
+  id: string,
+  body: Partial<MonitorCreateInput> & { status?: "active" | "paused" },
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .patch(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorDeleteRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .delete(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorRunRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/${id}/run`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorCheckRaw(
+  monitorId: string,
+  checkId: string,
+  identity: Identity,
+  query?: Record<string, string | number>,
+) {
+  const req = request(TEST_API_URL)
+    .get(`/v2/monitor/${monitorId}/checks/${checkId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+  return query ? req.query(query) : req;
+}
+
+export async function monitorEmailConfirmRaw(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/confirm`)
+    .set("Content-Type", "application/json")
+    .send({ token });
+}
+
+export async function monitorEmailUnsubscribeRaw(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/unsubscribe`)
+    .set("Content-Type", "application/json")
+    .send({ token });
+}
+
+export async function monitorEmailConfirmRawViaQuery(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/confirm`)
+    .query({ token });
 }
 
 export async function parseRaw(
@@ -478,7 +592,7 @@ export function expectMapToSucceed(response: Awaited<ReturnType<typeof map>>) {
 // Search API
 // =========================================
 
-async function searchRaw(body: SearchRequestInput, identity: Identity) {
+export async function searchRaw(body: SearchRequestInput, identity: Identity) {
   return await request(TEST_API_URL)
     .post("/v2/search")
     .set("Authorization", `Bearer ${identity.apiKey}`)
@@ -494,6 +608,12 @@ function expectSearchToSucceed(
   expect(typeof response.body.data).toBe("object");
 }
 
+function expectSearchToFail(response: Awaited<ReturnType<typeof searchRaw>>) {
+  expect(response.statusCode).not.toBe(200);
+  expect(response.body.success).toBe(false);
+  expect(typeof response.body.error).toBe("string");
+}
+
 export async function search(
   body: SearchRequestInput,
   identity: Identity,
@@ -501,6 +621,86 @@ export async function search(
   const raw = await searchRaw(body, identity);
   expectSearchToSucceed(raw);
   return raw.body.data;
+}
+
+export async function searchWithFailure(
+  body: SearchRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  details?: unknown;
+}> {
+  const raw = await searchRaw(body, identity);
+  expectSearchToFail(raw);
+  return raw.body;
+}
+
+export async function searchRawFull(
+  body: SearchRequestInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/search")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function searchFeedbackRaw(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/search/" + encodeURIComponent(searchId) + "/feedback")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function searchFeedback(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+): Promise<{
+  success: true;
+  feedbackId: string;
+  creditsRefunded: number;
+  creditsRefundedToday?: number;
+  dailyRefundCap?: number;
+  dailyCapReached?: boolean;
+  alreadySubmitted?: boolean;
+  warning?: string;
+}> {
+  const raw = await searchFeedbackRaw(searchId, body, identity);
+  if (raw.statusCode !== 200) {
+    console.warn(
+      "Search feedback did not succeed",
+      JSON.stringify(raw.body, null, 2),
+    );
+  }
+  expect(raw.statusCode).toBe(200);
+  expect(raw.body.success).toBe(true);
+  expect(typeof raw.body.feedbackId).toBe("string");
+  expect(typeof raw.body.creditsRefunded).toBe("number");
+  return raw.body;
+}
+
+export async function searchFeedbackWithFailure(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  details?: unknown;
+}> {
+  const raw = await searchFeedbackRaw(searchId, body, identity);
+  expect(raw.statusCode).not.toBe(200);
+  expect(raw.body.success).toBe(false);
+  expect(typeof raw.body.error).toBe("string");
+  return raw.body;
 }
 
 // =========================================

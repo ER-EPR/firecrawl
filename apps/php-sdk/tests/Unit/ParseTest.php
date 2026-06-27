@@ -26,6 +26,7 @@ it('serializes ParseOptions with JSON format', function (): void {
     $options = ParseOptions::with(
         formats: ['markdown', JsonFormat::with(prompt: 'Extract')],
         onlyMainContent: true,
+        redactPII: true,
     );
 
     $array = $options->toArray();
@@ -33,10 +34,15 @@ it('serializes ParseOptions with JSON format', function (): void {
     expect($array['formats'][0])->toBe('markdown');
     expect($array['formats'][1])->toMatchArray(['type' => 'json', 'prompt' => 'Extract']);
     expect($array['onlyMainContent'])->toBeTrue();
+    expect($array['redactPII'])->toBeTrue();
 });
 
 it('rejects unsupported parse formats', function (): void {
     ParseOptions::with(formats: ['screenshot']);
+})->throws(FirecrawlException::class);
+
+it('rejects video parse format', function (): void {
+    ParseOptions::with(formats: ['video']);
 })->throws(FirecrawlException::class);
 
 it('rejects invalid proxy values', function (): void {

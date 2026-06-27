@@ -1,6 +1,6 @@
 import { ScrapeActionContent } from "../../../lib/entities";
 import { config } from "../../../config";
-import { Meta } from "..";
+import type { BrowserCookie, Meta } from "..";
 import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import {
   fireEngineMaxReasonableTime,
@@ -90,6 +90,7 @@ const featureFlags = [
   "pdf",
   "document",
   "audio",
+  "video",
   "atsv",
   "location",
   "mobile",
@@ -114,6 +115,7 @@ const featureFlagOptions: {
   pdf: { priority: 100 },
   document: { priority: 100 },
   audio: { priority: 100 },
+  video: { priority: 100 },
   atsv: { priority: 90 }, // NOTE: should atsv force to tlsclient? adjust priority if not
   useFastMode: { priority: 90 },
   location: { priority: 10 },
@@ -155,6 +157,7 @@ export type EngineScrapeResult = {
 
   youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
+  audioCookies?: BrowserCookie[];
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
@@ -222,7 +225,8 @@ const engineOptions: {
       "screenshot@fullScreen": true,
       pdf: false,
       document: false,
-      audio: true,
+      audio: false,
+      video: false,
       atsv: false,
       mobile: true,
       location: true,
@@ -242,7 +246,8 @@ const engineOptions: {
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
       document: false,
-      audio: false,
+      audio: true,
+      video: true,
       atsv: false,
       location: true,
       mobile: true,
@@ -262,7 +267,8 @@ const engineOptions: {
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
       document: false,
-      audio: false,
+      audio: true,
+      video: true,
       atsv: false,
       location: true,
       mobile: true,
@@ -282,7 +288,8 @@ const engineOptions: {
       "screenshot@fullScreen": true,
       pdf: true,
       document: true,
-      audio: true,
+      audio: false,
+      video: false,
       atsv: false,
       location: true,
       mobile: true,
@@ -302,7 +309,8 @@ const engineOptions: {
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
       document: false,
-      audio: false,
+      audio: true,
+      video: true,
       atsv: false,
       location: true,
       mobile: true,
@@ -322,7 +330,8 @@ const engineOptions: {
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
       document: false,
-      audio: false,
+      audio: true,
+      video: true,
       atsv: false,
       location: true,
       mobile: true,
@@ -343,6 +352,7 @@ const engineOptions: {
       pdf: false,
       document: false,
       audio: false,
+      video: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -363,6 +373,7 @@ const engineOptions: {
       pdf: false,
       document: false,
       audio: true,
+      video: true,
       atsv: true,
       location: true,
       mobile: false,
@@ -383,6 +394,7 @@ const engineOptions: {
       pdf: false,
       document: false,
       audio: true,
+      video: true,
       atsv: true,
       location: true,
       mobile: false,
@@ -403,6 +415,7 @@ const engineOptions: {
       pdf: false,
       document: false,
       audio: false,
+      video: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -423,6 +436,7 @@ const engineOptions: {
       pdf: true,
       document: false,
       audio: false,
+      video: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -443,6 +457,7 @@ const engineOptions: {
       pdf: false,
       document: true,
       audio: false,
+      video: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -463,6 +478,7 @@ const engineOptions: {
       pdf: false,
       document: false,
       audio: false,
+      video: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -483,6 +499,7 @@ const engineOptions: {
       pdf: false,
       document: false,
       audio: false,
+      video: false,
       atsv: false,
       location: false,
       mobile: false,

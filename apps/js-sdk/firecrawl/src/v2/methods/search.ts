@@ -20,11 +20,17 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
     throw new Error("limit must be positive");
   if (req.timeout != null && req.timeout <= 0)
     throw new Error("timeout must be positive");
+  if (req.includeDomains?.length && req.excludeDomains?.length)
+    throw new Error(
+      "includeDomains and excludeDomains cannot both be specified",
+    );
   const payload: Record<string, unknown> = {
     query: req.query,
   };
   if (req.sources) payload.sources = req.sources;
   if (req.categories) payload.categories = req.categories;
+  if (req.includeDomains) payload.includeDomains = req.includeDomains;
+  if (req.excludeDomains) payload.excludeDomains = req.excludeDomains;
   if (req.limit != null) payload.limit = req.limit;
   if (req.tbs != null) payload.tbs = req.tbs;
   if (req.location != null) payload.location = req.location;
@@ -92,6 +98,20 @@ export async function search(
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);
     if (data.images)
       out.images = transformArray<SearchResultImages>(data.images);
+    Object.defineProperty(out, "data", {
+      get() {
+        const parts: string[] = [];
+        if (out.web?.length) parts.push(`.web (${out.web.length} results)`);
+        if (out.news?.length) parts.push(`.news (${out.news.length} results)`);
+        if (out.images?.length) parts.push(`.images (${out.images.length} results)`);
+        const available = parts.length ? parts.join(", ") : ".web, .news, or .images";
+        throw new Error(
+          `SearchData has no '.data'. Results are grouped by source: ${available}`,
+        );
+      },
+      enumerable: false,
+      configurable: true,
+    });
     return out;
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "search");

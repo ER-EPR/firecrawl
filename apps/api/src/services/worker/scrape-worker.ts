@@ -83,6 +83,10 @@ import {
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 import { logScrape } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
+import {
+  recordMonitorScrapeFailure,
+  recordMonitorScrapeSuccess,
+} from "../monitoring/results";
 
 configDotenv();
 
@@ -361,6 +365,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           isUrlBlocked(
             doc.metadata.url,
             (await getACUCTeam(job.data.team_id))?.flags ?? null,
+            {
+              team_id: job.data.team_id,
+              origin: job.data.origin,
+            },
           )
         ) {
           throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
@@ -456,6 +464,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     v1: job.data.v1,
                     zeroDataRetention: job.data.zeroDataRetention,
                     apiKeyId: job.data.apiKeyId,
+                    monitoring: job.data.monitoring
+                      ? {
+                          ...job.data.monitoring,
+                          source: "discovered" as const,
+                        }
+                      : undefined,
                   },
                   jobId,
                   jobPriority,
@@ -529,6 +543,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
           is_parse: Boolean(job.data.internalOptions?.isParse),
+          monitor_id: job.data.monitoring?.monitorId,
+          monitor_check_id: job.data.monitoring?.checkId,
         },
         true,
       );
@@ -576,6 +592,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
+      await recordMonitorScrapeSuccess(job, doc);
+
       logger.debug("Declaring job as done...");
       await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
     } else {
@@ -613,6 +631,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
           is_parse: Boolean(job.data.internalOptions?.isParse),
+          monitor_id: job.data.monitoring?.monitorId,
+          monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
       );
@@ -629,6 +649,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         timeTaken: timeTakenInSeconds,
         zeroDataRetention: job.data.zeroDataRetention,
       }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
+
+      await recordMonitorScrapeSuccess(job, doc).catch(error =>
+        logger.warn("Failed to record monitor scrape result", { error }),
+      );
 
       if (job.data.skipNuq) {
         // doesn't use GCS for result retrieval, safe to not await
@@ -789,6 +813,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         zeroDataRetention: job.data.zeroDataRetention,
         skipNuq: job.data.skipNuq ?? false,
         is_parse: Boolean(job.data.internalOptions?.isParse),
+        monitor_id: job.data.monitoring?.monitorId,
+        monitor_check_id: job.data.monitoring?.checkId,
       },
       true,
     );
@@ -805,6 +831,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       timeTaken: timeTakenInSeconds,
       zeroDataRetention: job.data.zeroDataRetention,
     }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
+
+    await recordMonitorScrapeFailure(job, error);
 
     return data;
   } finally {
@@ -888,6 +916,9 @@ async function addKickoffSitemapJob(
       webhook: sourceJob.data.webhook,
       v1: sourceJob.data.v1,
       apiKeyId: sourceJob.data.apiKeyId,
+      monitoring: sourceJob.data.monitoring
+        ? { ...sourceJob.data.monitoring, source: "discovered" as const }
+        : undefined,
     } satisfies ScrapeJobKickoffSitemap,
     jobId,
     21,
@@ -943,6 +974,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         isCrawlSourceScrape: true,
         zeroDataRetention: job.data.zeroDataRetention,
         apiKeyId: job.data.apiKeyId,
+        monitoring: job.data.monitoring
+          ? { ...job.data.monitoring, source: "discovered" as const }
+          : undefined,
       },
       jobId,
       await getJobPriority({ team_id: job.data.team_id, basePriority: 15 }),
@@ -1031,6 +1065,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
             v1: job.data.v1,
             zeroDataRetention: job.data.zeroDataRetention,
             apiKeyId: job.data.apiKeyId,
+            monitoring: job.data.monitoring
+              ? { ...job.data.monitoring, source: "discovered" as const }
+              : undefined,
           },
           priority: jobPriority,
         };
@@ -1145,6 +1182,9 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
           zeroDataRetention:
             job.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
           apiKeyId: job.data.apiKeyId,
+          monitoring: job.data.monitoring
+            ? { ...job.data.monitoring, source: "discovered" as const }
+            : undefined,
         } satisfies ScrapeJobSingleUrls,
         jobId: uuidv7(),
         priority: jobPriority,

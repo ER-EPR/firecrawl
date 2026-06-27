@@ -26,8 +26,11 @@ final class Document
         private readonly ?array $images = null,
         private readonly ?string $screenshot = null,
         private readonly ?string $audio = null,
+        private readonly ?string $video = null,
         private readonly ?array $attributes = null,
         private readonly ?array $actions = null,
+        private readonly ?string $answer = null,
+        private readonly ?string $highlights = null,
         private readonly ?string $warning = null,
         private readonly ?array $changeTracking = null,
         private readonly ?array $branding = null,
@@ -47,8 +50,11 @@ final class Document
             images: $data['images'] ?? null,
             screenshot: $data['screenshot'] ?? null,
             audio: $data['audio'] ?? null,
+            video: $data['video'] ?? null,
             attributes: $data['attributes'] ?? null,
             actions: $data['actions'] ?? null,
+            answer: $data['answer'] ?? null,
+            highlights: $data['highlights'] ?? null,
             warning: $data['warning'] ?? null,
             changeTracking: $data['changeTracking'] ?? null,
             branding: $data['branding'] ?? null,
@@ -108,6 +114,11 @@ final class Document
         return $this->audio;
     }
 
+    public function getVideo(): ?string
+    {
+        return $this->video;
+    }
+
     /** @return list<array<string, mixed>>|null */
     public function getAttributes(): ?array
     {
@@ -123,6 +134,16 @@ final class Document
     public function getWarning(): ?string
     {
         return $this->warning;
+    }
+
+    public function getAnswer(): ?string
+    {
+        return $this->answer;
+    }
+
+    public function getHighlights(): ?string
+    {
+        return $this->highlights;
     }
 
     /** @return array<string, mixed>|null */

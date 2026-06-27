@@ -447,6 +447,81 @@ public class FirecrawlClient {
     }
 
     // ================================================================
+    // MONITOR
+    // ================================================================
+
+    public Monitor createMonitor(Map<String, Object> request) {
+        Objects.requireNonNull(request, "Monitor request is required");
+        return extractData(http.post("/v2/monitor", request, Map.class), Monitor.class);
+    }
+
+    public List<Monitor> listMonitors() {
+        return listMonitors(null, null);
+    }
+
+    public List<Monitor> listMonitors(Integer limit, Integer offset) {
+        Map raw = http.get("/v2/monitor" + listQuery(limit, offset), Map.class);
+        return extractDataList(raw, Monitor.class);
+    }
+
+    public Monitor getMonitor(String monitorId) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        return extractData(http.get("/v2/monitor/" + monitorId, Map.class), Monitor.class);
+    }
+
+    public Monitor updateMonitor(String monitorId, Map<String, Object> request) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Objects.requireNonNull(request, "Monitor update request is required");
+        return extractData(http.patch("/v2/monitor/" + monitorId, request, Map.class), Monitor.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    public boolean deleteMonitor(String monitorId) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Map<String, Object> response = http.delete("/v2/monitor/" + monitorId, Map.class);
+        return Boolean.TRUE.equals(response.get("success"));
+    }
+
+    public MonitorCheck runMonitor(String monitorId) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        return extractData(
+                http.post("/v2/monitor/" + monitorId + "/run", Collections.emptyMap(), Map.class),
+                MonitorCheck.class
+        );
+    }
+
+    public List<MonitorCheck> listMonitorChecks(String monitorId) {
+        return listMonitorChecks(monitorId, null, null);
+    }
+
+    public List<MonitorCheck> listMonitorChecks(String monitorId, Integer limit, Integer offset) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Map raw = http.get("/v2/monitor/" + monitorId + "/checks" + listQuery(limit, offset), Map.class);
+        return extractDataList(raw, MonitorCheck.class);
+    }
+
+    public MonitorCheckDetail getMonitorCheck(String monitorId, String checkId) {
+        return getMonitorCheck(monitorId, checkId, null, null, null, true);
+    }
+
+    public MonitorCheckDetail getMonitorCheck(
+            String monitorId, String checkId, Integer limit, Integer skip, String status) {
+        return getMonitorCheck(monitorId, checkId, limit, skip, status, true);
+    }
+
+    public MonitorCheckDetail getMonitorCheck(
+            String monitorId, String checkId, Integer limit, Integer skip, String status, boolean autoPaginate) {
+        Objects.requireNonNull(monitorId, "Monitor ID is required");
+        Objects.requireNonNull(checkId, "Check ID is required");
+        MonitorCheckDetail check = extractData(
+                http.get("/v2/monitor/" + monitorId + "/checks/" + checkId
+                        + monitorCheckQuery(limit, skip, status), Map.class),
+                MonitorCheckDetail.class
+        );
+        return autoPaginate ? paginateMonitorCheck(check) : check;
+    }
+
+    // ================================================================
     // SEARCH
     // ================================================================
 
@@ -845,6 +920,50 @@ public class FirecrawlClient {
         return CompletableFuture.supplyAsync(() -> map(url, options), asyncExecutor);
     }
 
+    public CompletableFuture<Monitor> createMonitorAsync(Map<String, Object> request) {
+        return CompletableFuture.supplyAsync(() -> createMonitor(request), asyncExecutor);
+    }
+
+    public CompletableFuture<List<Monitor>> listMonitorsAsync(Integer limit, Integer offset) {
+        return CompletableFuture.supplyAsync(() -> listMonitors(limit, offset), asyncExecutor);
+    }
+
+    public CompletableFuture<Monitor> getMonitorAsync(String monitorId) {
+        return CompletableFuture.supplyAsync(() -> getMonitor(monitorId), asyncExecutor);
+    }
+
+    public CompletableFuture<Monitor> updateMonitorAsync(String monitorId, Map<String, Object> request) {
+        return CompletableFuture.supplyAsync(() -> updateMonitor(monitorId, request), asyncExecutor);
+    }
+
+    public CompletableFuture<Boolean> deleteMonitorAsync(String monitorId) {
+        return CompletableFuture.supplyAsync(() -> deleteMonitor(monitorId), asyncExecutor);
+    }
+
+    public CompletableFuture<MonitorCheck> runMonitorAsync(String monitorId) {
+        return CompletableFuture.supplyAsync(() -> runMonitor(monitorId), asyncExecutor);
+    }
+
+    public CompletableFuture<List<MonitorCheck>> listMonitorChecksAsync(String monitorId, Integer limit, Integer offset) {
+        return CompletableFuture.supplyAsync(() -> listMonitorChecks(monitorId, limit, offset), asyncExecutor);
+    }
+
+    public CompletableFuture<MonitorCheckDetail> getMonitorCheckAsync(
+            String monitorId, String checkId, Integer limit, Integer skip, String status) {
+        return CompletableFuture.supplyAsync(
+                () -> getMonitorCheck(monitorId, checkId, limit, skip, status),
+                asyncExecutor
+        );
+    }
+
+    public CompletableFuture<MonitorCheckDetail> getMonitorCheckAsync(
+            String monitorId, String checkId, Integer limit, Integer skip, String status, boolean autoPaginate) {
+        return CompletableFuture.supplyAsync(
+                () -> getMonitorCheck(monitorId, checkId, limit, skip, status, autoPaginate),
+                asyncExecutor
+        );
+    }
+
     /**
      * Asynchronously runs an agent task and waits for completion.
      *
@@ -900,6 +1019,116 @@ public class FirecrawlClient {
      */
     public CompletableFuture<BrowserListResponse> listBrowsersAsync(String status) {
         return CompletableFuture.supplyAsync(() -> listBrowsers(status), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously starts a crawl job and returns immediately with the job reference.
+     *
+     * @param url     the URL to start crawling from
+     * @param options crawl configuration options
+     * @return a CompletableFuture that resolves to the CrawlResponse
+     */
+    public CompletableFuture<CrawlResponse> startCrawlAsync(String url, CrawlOptions options) {
+        return CompletableFuture.supplyAsync(() -> startCrawl(url, options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the status of a crawl job.
+     *
+     * @param jobId the crawl job ID
+     * @return a CompletableFuture that resolves to the CrawlJob
+     */
+    public CompletableFuture<CrawlJob> getCrawlStatusAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getCrawlStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously cancels a crawl job.
+     *
+     * @param jobId the crawl job ID
+     * @return a CompletableFuture that resolves to the cancellation response
+     */
+    public CompletableFuture<Map<String, Object>> cancelCrawlAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> cancelCrawl(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously starts a batch scrape job and returns immediately with the job reference.
+     *
+     * @param urls    the URLs to scrape
+     * @param options batch scrape configuration options
+     * @return a CompletableFuture that resolves to the BatchScrapeResponse
+     */
+    public CompletableFuture<BatchScrapeResponse> startBatchScrapeAsync(List<String> urls, BatchScrapeOptions options) {
+        return CompletableFuture.supplyAsync(() -> startBatchScrape(urls, options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the status of a batch scrape job.
+     *
+     * @param jobId the batch scrape job ID
+     * @return a CompletableFuture that resolves to the BatchScrapeJob
+     */
+    public CompletableFuture<BatchScrapeJob> getBatchScrapeStatusAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getBatchScrapeStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously cancels a batch scrape job.
+     *
+     * @param jobId the batch scrape job ID
+     * @return a CompletableFuture that resolves to the cancellation response
+     */
+    public CompletableFuture<Map<String, Object>> cancelBatchScrapeAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> cancelBatchScrape(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously starts an agent task and returns immediately with the job reference.
+     *
+     * @param options agent configuration options
+     * @return a CompletableFuture that resolves to the AgentResponse
+     */
+    public CompletableFuture<AgentResponse> startAgentAsync(AgentOptions options) {
+        return CompletableFuture.supplyAsync(() -> startAgent(options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the status of an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return a CompletableFuture that resolves to the AgentStatusResponse
+     */
+    public CompletableFuture<AgentStatusResponse> getAgentStatusAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getAgentStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously cancels an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return a CompletableFuture that resolves to the cancellation response
+     */
+    public CompletableFuture<Map<String, Object>> cancelAgentAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> cancelAgent(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets concurrency info.
+     *
+     * @return a CompletableFuture that resolves to the ConcurrencyCheck
+     */
+    public CompletableFuture<ConcurrencyCheck> getConcurrencyAsync() {
+        return CompletableFuture.supplyAsync(this::getConcurrency, asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets credit usage.
+     *
+     * @return a CompletableFuture that resolves to the CreditUsage
+     */
+    public CompletableFuture<CreditUsage> getCreditUsageAsync() {
+        return CompletableFuture.supplyAsync(this::getCreditUsage, asyncExecutor);
     }
 
     // ================================================================
@@ -966,6 +1195,25 @@ public class FirecrawlClient {
         return job;
     }
 
+    private MonitorCheckDetail paginateMonitorCheck(MonitorCheckDetail check) {
+        if (check.getPages() == null) {
+            check.setPages(new ArrayList<>());
+        }
+        MonitorCheckDetail current = check;
+        while (current.getNext() != null && !current.getNext().isEmpty()) {
+            MonitorCheckDetail nextPage = extractData(
+                    http.getAbsolute(current.getNext(), Map.class),
+                    MonitorCheckDetail.class
+            );
+            if (nextPage.getPages() != null && !nextPage.getPages().isEmpty()) {
+                check.getPages().addAll(nextPage.getPages());
+            }
+            current = nextPage;
+        }
+        check.setNext(null);
+        return check;
+    }
+
     // ================================================================
     // INTERNAL UTILITIES
     // ================================================================
@@ -981,6 +1229,35 @@ public class FirecrawlClient {
             return http.objectMapper.convertValue(rawResponse, type);
         }
         return http.objectMapper.convertValue(data, type);
+    }
+
+    private <T> List<T> extractDataList(Map rawResponse, Class<T> type) {
+        Object data = rawResponse.get("data");
+        if (!(data instanceof List<?>)) {
+            return Collections.emptyList();
+        }
+        List<T> result = new ArrayList<>();
+        for (Object item : (List<?>) data) {
+            result.add(http.objectMapper.convertValue(item, type));
+        }
+        return result;
+    }
+
+    private String listQuery(Integer limit, Integer offset) {
+        List<String> parts = new ArrayList<>();
+        if (limit != null) parts.add("limit=" + limit);
+        if (offset != null) parts.add("offset=" + offset);
+        return parts.isEmpty() ? "" : "?" + String.join("&", parts);
+    }
+
+    private String monitorCheckQuery(Integer limit, Integer skip, String status) {
+        List<String> parts = new ArrayList<>();
+        if (limit != null) parts.add("limit=" + limit);
+        if (skip != null) parts.add("skip=" + skip);
+        if (status != null && !status.isBlank()) {
+            parts.add("status=" + java.net.URLEncoder.encode(status, java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return parts.isEmpty() ? "" : "?" + String.join("&", parts);
     }
 
     /**
@@ -1008,6 +1285,7 @@ public class FirecrawlClient {
     public static final class Builder {
 
         private String apiKey;
+        private boolean apiKeyExplicitlySet;
         private String apiUrl = DEFAULT_API_URL;
         private long timeoutMs = DEFAULT_TIMEOUT_MS;
         private int maxRetries = DEFAULT_MAX_RETRIES;
@@ -1023,6 +1301,7 @@ public class FirecrawlClient {
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            this.apiKeyExplicitlySet = true;
             return this;
         }
 
@@ -1098,6 +1377,10 @@ public class FirecrawlClient {
 
         public FirecrawlClient build() {
             String resolvedKey = apiKey;
+            if (apiKeyExplicitlySet && (resolvedKey == null || resolvedKey.isBlank())) {
+                throw new FirecrawlException(
+                        "API key cannot be null or empty when explicitly provided.");
+            }
             if (resolvedKey == null || resolvedKey.isBlank()) {
                 resolvedKey = System.getenv("FIRECRAWL_API_KEY");
             }

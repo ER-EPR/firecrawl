@@ -3,9 +3,13 @@
 declare(strict_types=1);
 
 use Firecrawl\Models\CreditUsage;
+use Firecrawl\Models\Document;
 use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
+use Firecrawl\Models\HighlightsFormat;
+use Firecrawl\Models\QueryFormat;
+use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
 
 it('hydrates CreditUsage from nested data key', function (): void {
@@ -90,6 +94,16 @@ it('preserves null creditsUsed in CrawlJob', function (): void {
     expect($job->getCreditsUsed())->toBeNull();
 });
 
+it('hydrates video URL in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Video',
+        'video' => 'https://storage.googleapis.com/firecrawl/video.mp4',
+    ]);
+
+    expect($doc->getMarkdown())->toBe('# Video');
+    expect($doc->getVideo())->toBe('https://storage.googleapis.com/firecrawl/video.mp4');
+});
+
 it('preserves positional integration in ScrapeOptions::with', function (): void {
     $options = ScrapeOptions::with(
         null,
@@ -133,3 +147,51 @@ it('serializes lockdown in ScrapeOptions', function (): void {
         'integration' => 'php-sdk',
     ]);
 });
+
+it('serializes redactPII in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        redactPII: true,
+    );
+
+    expect($options->getRedactPII())->toBeTrue();
+    expect($options->toArray())->toMatchArray([
+        'redactPII' => true,
+    ]);
+    expect(array_key_exists('formats', $options->toArray()))->toBeFalse();
+});
+
+it('serializes query format mode in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        formats: [QueryFormat::with('What is Firecrawl?', QueryFormat::MODE_DIRECT_QUOTE)],
+    );
+
+    expect($options->toArray()['formats'][0])->toMatchArray([
+        'type' => 'query',
+        'prompt' => 'What is Firecrawl?',
+        'mode' => 'directQuote',
+    ]);
+});
+
+it('serializes question and highlights formats in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        formats: [
+            QuestionFormat::with('What is Firecrawl?'),
+            HighlightsFormat::with('What is Firecrawl?'),
+        ],
+    );
+
+    expect($options->toArray()['formats'])->toMatchArray([
+        [
+            'type' => 'question',
+            'question' => 'What is Firecrawl?',
+        ],
+        [
+            'type' => 'highlights',
+            'query' => 'What is Firecrawl?',
+        ],
+    ]);
+});
+
+it('rejects invalid query format mode', function (): void {
+    QueryFormat::with('What is Firecrawl?', 'quoted');
+})->throws(InvalidArgumentException::class, "query mode must be 'freeform' or 'directQuote'");

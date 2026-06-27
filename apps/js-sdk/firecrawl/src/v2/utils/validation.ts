@@ -4,6 +4,9 @@ import {
   type JsonFormat,
   type ParseFormatOption,
   type ParseOptions,
+  type QuestionFormat,
+  type HighlightsFormat,
+  type QueryFormat,
   type ScrapeOptions,
   type ScreenshotFormat,
 } from "../types";
@@ -49,6 +52,30 @@ export function ensureValidFormats(formats?: FormatOption[]): void {
       }
       continue;
     }
+    if ((fmt as QuestionFormat).type === "question") {
+      const q = fmt as QuestionFormat;
+      if (typeof q.question !== "string" || q.question.trim().length === 0) {
+        throw new Error("question format requires a non-empty 'question' string");
+      }
+      continue;
+    }
+    if ((fmt as HighlightsFormat).type === "highlights") {
+      const h = fmt as HighlightsFormat;
+      if (typeof h.query !== "string" || h.query.trim().length === 0) {
+        throw new Error("highlights format requires a non-empty 'query' string");
+      }
+      continue;
+    }
+    if ((fmt as QueryFormat).type === "query") {
+      const q = fmt as QueryFormat;
+      if (typeof q.prompt !== "string" || q.prompt.trim().length === 0) {
+        throw new Error("query format requires a non-empty 'prompt' string");
+      }
+      if (q.mode != null && q.mode !== "freeform" && q.mode !== "directQuote") {
+        throw new Error("query format mode must be 'freeform' or 'directQuote'");
+      }
+      continue;
+    }
     if ((fmt as ScreenshotFormat).type === "screenshot") {
       // no-op; already camelCase; validate numeric fields if present
       const s = fmt as ScreenshotFormat;
@@ -87,6 +114,9 @@ export function ensureValidParseFormats(formats?: ParseFormatOption[]): void {
       if (fmt === "branding") {
         throw new Error("parse does not support branding format");
       }
+      if (fmt === "audio" || fmt === "video") {
+        throw new Error(`parse does not support ${fmt} format`);
+      }
       continue;
     }
 
@@ -99,6 +129,9 @@ export function ensureValidParseFormats(formats?: ParseFormatOption[]): void {
     }
     if (type === "branding") {
       throw new Error("parse does not support branding format");
+    }
+    if (type === "audio" || type === "video") {
+      throw new Error(`parse does not support ${type} format`);
     }
 
     if ((fmt as JsonFormat).type === "json") {
@@ -115,6 +148,31 @@ export function ensureValidParseFormats(formats?: ParseFormatOption[]): void {
           "Pass the Zod schema directly (e.g., `schema: MySchema`) instead of `schema: MySchema.shape`. " +
           "The SDK will automatically convert Zod schemas to JSON Schema format."
         );
+      }
+      continue;
+    }
+
+    if ((fmt as QuestionFormat).type === "question") {
+      const q = fmt as QuestionFormat;
+      if (typeof q.question !== "string" || q.question.trim().length === 0) {
+        throw new Error("question format requires a non-empty 'question' string");
+      }
+      continue;
+    }
+    if ((fmt as HighlightsFormat).type === "highlights") {
+      const h = fmt as HighlightsFormat;
+      if (typeof h.query !== "string" || h.query.trim().length === 0) {
+        throw new Error("highlights format requires a non-empty 'query' string");
+      }
+      continue;
+    }
+    if ((fmt as QueryFormat).type === "query") {
+      const q = fmt as QueryFormat;
+      if (typeof q.prompt !== "string" || q.prompt.trim().length === 0) {
+        throw new Error("query format requires a non-empty 'prompt' string");
+      }
+      if (q.mode != null && q.mode !== "freeform" && q.mode !== "directQuote") {
+        throw new Error("query format mode must be 'freeform' or 'directQuote'");
       }
     }
   }

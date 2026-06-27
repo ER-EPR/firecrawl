@@ -10,7 +10,7 @@ use Firecrawl\Exceptions\FirecrawlException;
  * Options for parsing uploaded files via `/v2/parse`.
  *
  * Parse does not support browser-rendering features (actions, waitFor,
- * location, mobile) nor the screenshot, branding, or changeTracking formats.
+ * location, mobile) nor the screenshot, branding, audio, video, or changeTracking formats.
  * The proxy field only accepts "auto" or "basic".
  */
 final class ParseOptions
@@ -20,10 +20,12 @@ final class ParseOptions
         'screenshot',
         'screenshot@fullPage',
         'branding',
+        'audio',
+        'video',
     ];
 
     /**
-     * @param list<string|JsonFormat>|null $formats
+     * @param list<string|JsonFormat|QuestionFormat|HighlightsFormat|QueryFormat>|null $formats
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
@@ -42,10 +44,11 @@ final class ParseOptions
         private readonly ?bool $blockAds = null,
         private readonly ?string $proxy = null,
         private readonly ?string $integration = null,
+        private readonly ?bool $redactPII = null,
     ) {}
 
     /**
-     * @param list<string|JsonFormat>|null $formats
+     * @param list<string|JsonFormat|QuestionFormat|HighlightsFormat|QueryFormat>|null $formats
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
@@ -64,6 +67,7 @@ final class ParseOptions
         ?bool $blockAds = null,
         ?string $proxy = null,
         ?string $integration = null,
+        ?bool $redactPII = null,
     ): self {
         if ($timeout !== null && $timeout <= 0) {
             throw new FirecrawlException('timeout must be positive');
@@ -95,6 +99,7 @@ final class ParseOptions
             $blockAds,
             $proxy,
             $integration,
+            $redactPII,
         );
     }
 
@@ -105,7 +110,13 @@ final class ParseOptions
 
         if ($this->formats !== null) {
             $data['formats'] = array_map(
-                fn (string|JsonFormat $f): string|array => $f instanceof JsonFormat ? $f->toArray() : $f,
+                fn (string|JsonFormat|QuestionFormat|HighlightsFormat|QueryFormat $f): string|array =>
+                    (
+                        $f instanceof JsonFormat
+                        || $f instanceof QuestionFormat
+                        || $f instanceof HighlightsFormat
+                        || $f instanceof QueryFormat
+                    ) ? $f->toArray() : $f,
                 $this->formats,
             );
         }
@@ -122,6 +133,7 @@ final class ParseOptions
             'blockAds' => $this->blockAds,
             'proxy' => $this->proxy,
             'integration' => $this->integration,
+            'redactPII' => $this->redactPII,
         ];
 
         foreach ($fields as $key => $value) {
@@ -141,13 +153,22 @@ final class ParseOptions
         if ($fmt instanceof JsonFormat) {
             return 'json';
         }
+        if ($fmt instanceof QuestionFormat) {
+            return 'question';
+        }
+        if ($fmt instanceof HighlightsFormat) {
+            return 'highlights';
+        }
+        if ($fmt instanceof QueryFormat) {
+            return 'query';
+        }
         if (is_array($fmt) && isset($fmt['type']) && is_string($fmt['type'])) {
             return $fmt['type'];
         }
         return null;
     }
 
-    /** @return list<string|JsonFormat>|null */
+    /** @return list<string|JsonFormat|QuestionFormat|HighlightsFormat|QueryFormat>|null */
     public function getFormats(): ?array
     {
         return $this->formats;
