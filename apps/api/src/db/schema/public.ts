@@ -129,13 +129,6 @@ export const browser_sessions = pgTable("browser_sessions", {
   scrape_id: uuid("scrape_id"),
 });
 
-export const concurrency_log = pgTable("concurrency_log", {
-  id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  team_id: uuid("team_id").notNull(),
-  concurrency: integer("concurrency").notNull(),
-});
-
 export const crawls = pgTable("crawls", {
   id: uuid("id").notNull(),
   request_id: uuid("request_id").notNull(),
@@ -392,6 +385,23 @@ export const monitors = pgTable("monitors", {
   deleted_at: ts("deleted_at"),
   goal: text("goal"),
   judge_enabled: boolean("judge_enabled").notNull().default(false),
+});
+
+export const slack_installations = pgTable("slack_installations", {
+  id: uuid("id").notNull().defaultRandom(),
+  team_id: uuid("team_id").notNull(),
+  slack_team_id: text("slack_team_id").notNull(),
+  slack_team_name: text("slack_team_name"),
+  slack_enterprise_id: text("slack_enterprise_id"),
+  bot_user_id: text("bot_user_id"),
+  bot_token: text("bot_token").notNull(),
+  scope: text("scope"),
+  authed_user_id: text("authed_user_id"),
+  app_id: text("app_id"),
+  incoming_webhook: jsonb("incoming_webhook"),
+  revoked_at: ts("revoked_at"),
+  created_at: ts("created_at").notNull().defaultNow(),
+  updated_at: ts("updated_at").notNull().defaultNow(),
 });
 
 export const notification_preferences = pgTable("notification_preferences", {
